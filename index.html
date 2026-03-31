@@ -1,0 +1,1042 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Trip Splitter</title>
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;700;900&family=DM+Mono:wght@300;400;500&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#0d0d0d;--surface:#161616;--surface2:#1f1f1f;--surface3:#252525;
+  --border:#2a2a2a;--accent:#e8c97a;--accent2:#c97a7a;
+  --text:#f0ede6;--muted:#777;--green:#7ac9a0;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--bg);color:var(--text);font-family:'DM Mono',monospace;min-height:100vh;}
+
+/* ── VIEWS ── */
+#tripListView,#tripDetailView{padding:2rem 1rem 5rem}
+.wrap{max-width:920px;margin:0 auto;position:relative;z-index:1}
+.noise{position:fixed;inset:0;pointer-events:none;z-index:0;opacity:.35;
+  background-image:url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.04'/%3E%3C/svg%3E")}
+
+/* ── HEADER ── */
+header{margin-bottom:2.5rem}
+h1{font-family:'Playfair Display',serif;font-size:clamp(2rem,6vw,3.4rem);font-weight:900;letter-spacing:-1px;line-height:1}
+h1 span{color:var(--accent)}
+.hdr-sub{color:var(--muted);font-size:.75rem;margin-top:.4rem;letter-spacing:.07em;text-transform:uppercase}
+.hdr-row{display:flex;align-items:flex-end;justify-content:space-between;gap:1rem;flex-wrap:wrap}
+
+/* ── CARDS ── */
+.card{background:var(--surface);border:1px solid var(--border);border-radius:4px;padding:1.5rem;margin-bottom:1.5rem}
+.card-title{font-family:'Playfair Display',serif;font-size:1.05rem;font-weight:700;color:var(--accent);margin-bottom:1.1rem;letter-spacing:-.2px}
+
+/* ── FORM ── */
+label{display:block;font-size:.68rem;text-transform:uppercase;letter-spacing:.1em;color:var(--muted);margin-bottom:.3rem;margin-top:.85rem}
+label:first-of-type{margin-top:0}
+input,select,textarea{width:100%;background:var(--surface2);border:1px solid var(--border);border-radius:3px;
+  color:var(--text);font-family:'DM Mono',monospace;font-size:.84rem;padding:.55rem .7rem;outline:none;transition:border-color .18s}
+input:focus,select:focus,textarea:focus{border-color:var(--accent)}
+input::placeholder,textarea::placeholder{color:#3a3a3a}
+textarea{resize:vertical;min-height:90px}
+
+/* ── BUTTONS ── */
+.btn{background:var(--accent);color:#0d0d0d;border:none;border-radius:3px;font-family:'DM Mono',monospace;
+  font-size:.72rem;font-weight:500;padding:.55rem .95rem;cursor:pointer;text-transform:uppercase;
+  letter-spacing:.08em;white-space:nowrap;transition:opacity .15s;flex-shrink:0}
+.btn:hover{opacity:.82}
+.btn.sec{background:transparent;color:var(--accent);border:1px solid var(--accent)}
+.btn.ghost{background:transparent;color:var(--muted);border:1px solid var(--border)}
+.btn.ghost:hover{color:var(--text);border-color:var(--muted);opacity:1}
+.btn.danger{background:var(--accent2);color:#0d0d0d}
+
+/* ── TRIP LIST ── */
+.trip-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:1rem;margin-top:1.2rem}
+.trip-tile{background:var(--surface);border:1px solid var(--border);border-radius:4px;padding:1.2rem;
+  cursor:pointer;transition:border-color .15s,background .15s;position:relative}
+.trip-tile:hover{border-color:var(--accent);background:#191510}
+.trip-tile .tt-name{font-family:'Playfair Display',serif;font-size:1rem;font-weight:700;margin-bottom:.3rem}
+.trip-tile .tt-meta{font-size:.7rem;color:var(--muted)}
+.trip-tile .tt-total{font-size:.85rem;color:var(--accent);margin-top:.5rem;font-weight:500}
+.trip-tile .tt-del{position:absolute;top:.6rem;right:.6rem;background:none;border:none;
+  color:var(--accent2);cursor:pointer;font-size:1.1rem;padding:0;line-height:1;opacity:0;transition:opacity .15s}
+.trip-tile:hover .tt-del{opacity:1}
+.new-trip-tile{border-style:dashed;display:flex;align-items:center;justify-content:center;
+  gap:.5rem;font-size:.8rem;color:var(--muted);min-height:90px}
+.new-trip-tile:hover{color:var(--accent);border-color:var(--accent)}
+
+/* ── PEOPLE ── */
+.add-row{display:flex;gap:.5rem;margin-top:.5rem}
+.add-row input{flex:1}
+.pill-list{display:flex;flex-wrap:wrap;gap:.4rem;margin-top:.6rem}
+.pill{background:var(--surface2);border:1px solid var(--border);border-radius:2px;
+  padding:.28rem .6rem;font-size:.73rem;display:flex;align-items:center;gap:.35rem}
+.pill .x{cursor:pointer;color:var(--accent2);line-height:1;font-size:1rem}
+.pill .x:hover{color:#ff9999}
+
+/* ── BUILDER ── */
+.two-col{display:grid;grid-template-columns:1fr 1fr;gap:.7rem}
+@media(max-width:520px){.two-col{grid-template-columns:1fr}}
+.item-form{background:var(--surface2);border:1px solid var(--border);border-radius:3px;padding:1rem;margin-bottom:.9rem}
+.item-form-grid{display:grid;grid-template-columns:2fr 1fr;gap:.6rem}
+@media(max-width:460px){.item-form-grid{grid-template-columns:1fr}}
+.item-form-grid .full{grid-column:1/-1}
+.split-mode-row{display:flex;gap:.35rem;margin-bottom:.55rem}
+.smode-btn{flex:1;background:var(--surface);border:1px solid var(--border);border-radius:2px;
+  color:var(--muted);font-family:'DM Mono',monospace;font-size:.65rem;padding:.3rem;cursor:pointer;
+  text-transform:uppercase;letter-spacing:.05em;transition:all .15s}
+.smode-btn.on{background:#1e1b12;border-color:var(--accent);color:var(--accent)}
+.person-share-row{display:flex;align-items:center;gap:.5rem;margin-bottom:.32rem}
+.psn{flex:1;font-size:.78rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
+.psn-input{width:80px;flex-shrink:0}
+.psn-preview{font-size:.68rem;color:var(--muted);min-width:52px;text-align:right;flex-shrink:0}
+.cb-wrap{display:flex;flex-wrap:wrap;gap:.35rem}
+.cb-pill{display:flex;align-items:center;gap:.3rem;background:var(--surface);border:1px solid var(--border);
+  border-radius:2px;padding:.28rem .55rem;font-size:.72rem;cursor:pointer;
+  transition:border-color .12s,background .12s;user-select:none}
+.cb-pill input{width:auto;accent-color:var(--accent)}
+.cb-pill:has(input:checked){border-color:var(--accent);background:#1e1b12}
+.select-all-row{display:flex;gap:.4rem;margin-bottom:.5rem}
+.hint{font-size:.68rem;margin-top:.4rem}
+.hint.ok{color:var(--green)}.hint.bad{color:var(--accent2)}
+.items-list{margin-bottom:.9rem}
+.item-row{display:flex;align-items:flex-start;justify-content:space-between;
+  padding:.55rem .7rem;background:var(--surface2);border:1px solid var(--border);
+  border-radius:3px;margin-bottom:.35rem;gap:.5rem}
+.item-row .item-left{flex:1;min-width:0}
+.item-row .item-name{font-size:.85rem;font-weight:500}
+.item-row .item-sub{font-size:.68rem;color:var(--muted);margin-top:.18rem}
+.item-row .item-right{text-align:right;flex-shrink:0;display:flex;align-items:center;gap:.2rem}
+.item-row .item-price{font-size:.92rem;color:var(--accent)}
+.item-rm{background:none;border:none;cursor:pointer;font-size:1rem;padding:0;line-height:1}
+.taxtip-grid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:.6rem}
+@media(max-width:500px){.taxtip-grid{grid-template-columns:1fr 1fr}}
+.total-preview{display:flex;justify-content:space-between;align-items:center;
+  background:var(--surface2);border:1px solid var(--accent);border-radius:3px;
+  padding:.55rem .85rem;margin-top:.6rem;font-size:.83rem}
+.total-preview .tp-label{color:var(--muted);font-size:.68rem;text-transform:uppercase}
+.total-preview .tp-val{color:var(--accent);font-size:1rem;font-family:'Playfair Display',serif}
+.total-preview .tp-breakdown{font-size:.66rem;color:var(--muted);margin-top:.12rem}
+
+/* ── RECEIPTS LOG ── */
+.receipt-card{border:1px solid var(--border);border-radius:3px;padding:1rem;
+  margin-bottom:.8rem;background:var(--surface2);position:relative}
+.receipt-card .rc-name{font-family:'Playfair Display',serif;font-size:1rem;font-weight:700}
+.receipt-card .rc-total{color:var(--accent);font-weight:500;white-space:nowrap}
+.receipt-card .rc-meta{font-size:.68rem;color:var(--muted);margin-top:.25rem}
+.receipt-card .rc-items{margin-top:.5rem;padding-top:.5rem;border-top:1px solid var(--border)}
+.receipt-card .rc-item-line{display:flex;justify-content:space-between;font-size:.72rem;color:var(--muted);padding:.15rem 0}
+.receipt-card .rc-item-line span:last-child{color:var(--text)}
+.receipt-card .rc-head{cursor:pointer;user-select:none;display:flex;justify-content:space-between;align-items:flex-start}
+.receipt-card .rc-head:hover .rc-name{color:var(--accent)}
+.editing-card{border-color:var(--accent)!important;box-shadow:0 0 0 1px var(--accent)}
+
+/* ── SUMMARY ── */
+.two-pane{display:grid;grid-template-columns:1fr 1fr;gap:1.5rem}
+@media(max-width:620px){.two-pane{grid-template-columns:1fr}}
+.sum-table{width:100%;border-collapse:collapse;font-size:.8rem}
+.sum-table th{font-size:.65rem;text-transform:uppercase;letter-spacing:.1em;color:var(--muted);padding:0 0 .5rem;border-bottom:1px solid var(--border);text-align:left}
+.sum-table td{padding:.55rem 0;border-bottom:1px solid #1d1d1d;vertical-align:middle}
+.sum-table td:last-child{text-align:right}
+.owe{color:var(--accent2);font-weight:500}.owed{color:var(--green);font-weight:500}.even{color:var(--muted)}
+.total-bar{display:flex;justify-content:space-between;background:var(--surface2);border:1px solid var(--accent);border-radius:3px;padding:.85rem 1.1rem;margin-top:1rem;font-size:.82rem}
+.total-bar span:last-child{font-size:1.05rem;color:var(--accent);font-family:'Playfair Display',serif}
+.settle-item{display:flex;align-items:center;justify-content:space-between;padding:.65rem .9rem;background:var(--surface2);border:1px solid var(--border);border-radius:3px;margin-bottom:.45rem;font-size:.8rem;gap:.4rem;flex-wrap:wrap}
+.arr{color:var(--muted);flex-shrink:0}
+.s-amt{color:var(--accent);font-weight:500;white-space:nowrap}
+
+/* ── PER-PERSON BREAKDOWN ── */
+.breakdown-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:.9rem}
+.breakdown-person{background:var(--surface2);border:1px solid var(--border);border-radius:3px;padding:.9rem}
+.breakdown-person .bp-name{font-family:'Playfair Display',serif;font-size:.95rem;font-weight:700;margin-bottom:.55rem;padding-bottom:.4rem;border-bottom:1px solid var(--border)}
+.breakdown-person .bp-line{display:flex;justify-content:space-between;font-size:.72rem;padding:.18rem 0;color:var(--muted)}
+.breakdown-person .bp-line span:last-child{color:var(--text)}
+.breakdown-person .bp-line.fee{color:var(--muted)}
+.breakdown-person .bp-total{display:flex;justify-content:space-between;font-size:.82rem;font-weight:500;margin-top:.5rem;padding-top:.4rem;border-top:1px solid var(--border)}
+.breakdown-person .bp-total span:last-child{color:var(--accent)}
+
+/* ── MISC ── */
+.empty{color:var(--muted);font-size:.78rem;text-align:center;padding:1.4rem}
+.warn-box{background:#1e1210;border:1px solid var(--accent2);border-radius:3px;padding:.5rem .7rem;font-size:.72rem;color:var(--accent2);margin-bottom:.7rem}
+.export-row{display:flex;gap:.5rem;flex-wrap:wrap}
+.section-label{font-size:.65rem;text-transform:uppercase;letter-spacing:.12em;color:var(--muted);margin-bottom:.6rem;padding-bottom:.4rem;border-bottom:1px solid var(--border)}
+.toast{position:fixed;bottom:1.4rem;left:50%;transform:translateX(-50%) translateY(6px);background:var(--green);color:#0d0d0d;padding:.5rem 1.1rem;border-radius:3px;font-size:.74rem;font-weight:500;opacity:0;transition:opacity .2s,transform .2s;pointer-events:none;z-index:200;text-transform:uppercase;letter-spacing:.07em}
+.toast.on{opacity:1;transform:translateX(-50%) translateY(0)}
+
+/* ── MODAL ── */
+.modal-bg{position:fixed;inset:0;background:rgba(0,0,0,.75);z-index:300;display:flex;align-items:center;justify-content:center;padding:1rem}
+.modal{background:var(--surface);border:1px solid var(--border);border-radius:5px;padding:1.5rem;width:100%;max-width:500px;max-height:90vh;overflow-y:auto}
+.modal h3{font-family:'Playfair Display',serif;font-size:1.1rem;color:var(--accent);margin-bottom:1rem}
+.modal-footer{display:flex;gap:.5rem;justify-content:flex-end;margin-top:1.2rem;flex-wrap:wrap}
+.import-tabs{display:flex;gap:.4rem;margin-bottom:.9rem}
+.itab{flex:1;background:var(--surface2);border:1px solid var(--border);border-radius:3px;color:var(--muted);font-family:'DM Mono',monospace;font-size:.7rem;padding:.4rem;cursor:pointer;text-transform:uppercase;transition:all .15s}
+.itab.on{background:#1e1b12;border-color:var(--accent);color:var(--accent)}
+</style>
+</head>
+<body>
+<div class="noise"></div>
+<div class="toast" id="toast"></div>
+
+<!-- ══════════════════════════════════════════════════════
+     TRIP LIST VIEW
+═══════════════════════════════════════════════════════ -->
+<div id="tripListView">
+<div class="wrap">
+  <header>
+    <div class="hdr-row">
+      <div>
+        <h1>Trip <span>Splitter</span></h1>
+        <p class="hdr-sub">Your trips · saved locally</p>
+      </div>
+      <button class="btn sec" onclick="openImportModal()">⬆ Import Trip</button>
+    </div>
+  </header>
+
+  <div class="trip-grid" id="tripGrid"></div>
+</div>
+</div>
+
+<!-- ══════════════════════════════════════════════════════
+     TRIP DETAIL VIEW
+═══════════════════════════════════════════════════════ -->
+<div id="tripDetailView" style="display:none">
+<div class="wrap">
+  <header>
+    <div class="hdr-row">
+      <div>
+        <button class="btn ghost" onclick="goHome()" style="margin-bottom:.6rem;font-size:.68rem">← All Trips</button>
+        <h1 id="tripDetailName" style="cursor:pointer" onclick="renameTripPrompt()">Trip <span>Name</span></h1>
+        <p class="hdr-sub" id="tripDetailSub">click name to rename</p>
+      </div>
+    </div>
+  </header>
+
+  <!-- ① PEOPLE -->
+  <div class="card">
+    <div class="card-title">① People on the trip</div>
+    <div class="add-row">
+      <input id="personInput" type="text" placeholder="Add a name…" maxlength="40">
+      <button class="btn" onclick="addPerson()">Add</button>
+    </div>
+    <div class="pill-list" id="peopleList"></div>
+  </div>
+
+  <!-- ② BUILD A RECEIPT -->
+  <div class="card" id="builderCard">
+    <div class="card-title" id="builderTitle">② Build a Receipt</div>
+    <div class="two-col" style="margin-bottom:.9rem">
+      <div>
+        <label>Receipt name</label>
+        <input id="rName" type="text" placeholder="e.g. Dinner at Nobu">
+      </div>
+      <div>
+        <label>Paid by</label>
+        <select id="rPaidBy"><option value="">— who paid? —</option></select>
+      </div>
+    </div>
+    <div class="section-label">Add items</div>
+    <div class="item-form">
+      <div class="item-form-grid">
+        <div>
+          <label style="margin-top:0">Item name</label>
+          <input id="iName" type="text" placeholder="e.g. Salmon tartare">
+        </div>
+        <div>
+          <label style="margin-top:0">Price ($)</label>
+          <input id="iPrice" type="number" placeholder="0.00" min="0" step="0.01">
+        </div>
+        <div class="full">
+          <label>Split among</label>
+          <div class="split-mode-row">
+            <button class="smode-btn on" id="sm-equal"  onclick="setItemSplit('equal')">Equal</button>
+            <button class="smode-btn"    id="sm-custom" onclick="setItemSplit('custom')">Custom $</button>
+            <button class="smode-btn"    id="sm-pct"    onclick="setItemSplit('pct')">Custom %</button>
+          </div>
+          <div id="itemSplitUI"></div>
+        </div>
+      </div>
+      <div style="display:flex;justify-content:flex-end;margin-top:.75rem">
+        <button class="btn" onclick="addItem()">+ Add Item</button>
+      </div>
+    </div>
+    <div id="pendingItems" class="items-list"></div>
+    <div class="section-label">Tax, Tip &amp; Fees</div>
+    <div class="taxtip-grid">
+      <div><label style="margin-top:0">Tax %</label><input id="rTaxPct" type="number" placeholder="e.g. 8.875" min="0" step=".001" oninput="updateTotalPreview()"></div>
+      <div><label style="margin-top:0">Tip %</label><input id="rTipPct" type="number" placeholder="e.g. 20" min="0" step=".1" oninput="updateTotalPreview()"></div>
+      <div><label style="margin-top:0">Tip $ (override)</label><input id="rTipFlat" type="number" placeholder="0.00" min="0" step=".01" oninput="updateTotalPreview()"></div>
+      <div><label style="margin-top:0">Extra fee %</label><input id="rFeePct" type="number" placeholder="e.g. 3" min="0" step=".001" oninput="updateTotalPreview()"></div>
+      <div style="grid-column:2/-1"><label style="margin-top:0">Fee label <span style="color:var(--muted);font-size:.6rem;text-transform:none">(optional)</span></label><input id="rFeeLabel" type="text" placeholder="e.g. DC surcharge" maxlength="40" oninput="updateTotalPreview()"></div>
+    </div>
+    <div class="total-preview" id="totalPreview" style="display:none">
+      <div><div class="tp-label">Receipt total</div><div class="tp-breakdown" id="tpBreakdown"></div></div>
+      <span class="tp-val" id="tpVal">$0.00</span>
+    </div>
+    <div style="display:flex;justify-content:flex-end;gap:.5rem;margin-top:1.1rem">
+      <button class="btn ghost" id="cancelEditBtn" onclick="resetBuilder()" style="display:none">Cancel Edit</button>
+      <button class="btn" id="saveBtn" onclick="saveReceipt()">Save Receipt →</button>
+    </div>
+  </div>
+
+  <!-- ③ RECEIPTS + SUMMARY -->
+  <div class="two-pane">
+    <div>
+      <div class="card" style="margin-bottom:0">
+        <div class="card-title">Receipts</div>
+        <div id="receiptLog"><div class="empty">No receipts yet.</div></div>
+      </div>
+    </div>
+    <div style="display:flex;flex-direction:column;gap:1.5rem">
+      <div class="card" style="margin-bottom:0">
+        <div class="card-title">Balances</div>
+        <div id="balances"><div class="empty">Add receipts to see balances.</div></div>
+      </div>
+      <div class="card" style="margin-bottom:0">
+        <div class="card-title">Settlements</div>
+        <div id="settlements"><div class="empty">Nothing to settle yet.</div></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Per-person breakdown -->
+  <div class="card" style="margin-top:1.5rem">
+    <div class="card-title">Per-Person Breakdown</div>
+    <div id="personBreakdown"><div class="empty">Add receipts to see itemized breakdowns.</div></div>
+  </div>
+
+  <!-- ④ EXPORT -->
+  <div class="card" style="margin-top:0">
+    <div class="card-title">③ Export &amp; Share</div>
+    <div class="export-row">
+      <button class="btn sec" onclick="shareViaURL()">🔗 Share Link</button>
+      <button class="btn sec" onclick="copyText()">📋 Copy Summary</button>
+      <button class="btn sec" onclick="downloadJSON()">⬇ Download JSON</button>
+      <button class="btn sec" onclick="downloadCSV()">⬇ Download CSV</button>
+      <button class="btn ghost" onclick="clearCurrentTrip()">🗑 Clear Trip Data</button>
+    </div>
+  </div>
+</div>
+</div>
+
+<!-- ══════════════════════════════════════════════════════
+     MODALS
+═══════════════════════════════════════════════════════ -->
+<!-- New Trip Modal -->
+<div class="modal-bg" id="newTripModal" style="display:none" onclick="if(event.target===this)closeModal('newTripModal')">
+  <div class="modal">
+    <h3>New Trip</h3>
+    <label>Trip name</label>
+    <input id="newTripName" type="text" placeholder="e.g. Barcelona 2025" maxlength="60">
+    <div class="modal-footer">
+      <button class="btn ghost" onclick="closeModal('newTripModal')">Cancel</button>
+      <button class="btn" onclick="createTrip()">Create Trip</button>
+    </div>
+  </div>
+</div>
+
+<!-- Import Modal -->
+<div class="modal-bg" id="importModal" style="display:none" onclick="if(event.target===this)closeModal('importModal')">
+  <div class="modal">
+    <h3>Import Trip</h3>
+    <div class="import-tabs">
+      <button class="itab on" id="itab-paste" onclick="setImportTab('paste')">Paste JSON</button>
+      <button class="itab"    id="itab-file"  onclick="setImportTab('file')">Upload File</button>
+    </div>
+    <div id="import-paste">
+      <label>Paste exported JSON below</label>
+      <textarea id="importJSON" placeholder='{"tripName":"...","people":[...],"receipts":[...]}'></textarea>
+    </div>
+    <div id="import-file" style="display:none">
+      <label>Select a .json file previously exported from Trip Splitter</label>
+      <input type="file" id="importFile" accept=".json" style="padding:.4rem">
+    </div>
+    <div class="modal-footer">
+      <button class="btn ghost" onclick="closeModal('importModal')">Cancel</button>
+      <button class="btn" onclick="doImport()">Import</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// ═══════════════════════════════════════════════════════
+// STORAGE & TRIP MANAGEMENT
+// ═══════════════════════════════════════════════════════
+const STORE_KEY = 'tripSplitter_v1';
+
+function loadStore(){
+  try{ return JSON.parse(localStorage.getItem(STORE_KEY))||{trips:[]}; }
+  catch(e){ return {trips:[]}; }
+}
+function saveStore(store){ localStorage.setItem(STORE_KEY, JSON.stringify(store)); }
+function getTrips(){ return loadStore().trips; }
+
+function saveTrip(trip){
+  const store=loadStore();
+  const idx=store.trips.findIndex(t=>t.id===trip.id);
+  if(idx>=0) store.trips[idx]=trip; else store.trips.push(trip);
+  saveStore(store);
+}
+function deleteTrip(id){
+  const store=loadStore();
+  store.trips=store.trips.filter(t=>t.id!==id);
+  saveStore(store);
+}
+
+// ─── Current trip in memory ──────────────────────────
+let currentTrip = null; // {id, tripName, people, receipts, createdAt}
+
+function newTripObj(name){
+  return {id:Date.now(), tripName:name, people:[], receipts:[], createdAt:new Date().toLocaleDateString()};
+}
+
+function persistCurrent(){
+  if(currentTrip) saveTrip(currentTrip);
+}
+
+// ═══════════════════════════════════════════════════════
+// TRIP LIST VIEW
+// ═══════════════════════════════════════════════════════
+function renderTripList(){
+  const trips=getTrips();
+  const grid=document.getElementById('tripGrid');
+  const tiles=trips.map(t=>{
+    const total=t.receipts.reduce((s,r)=>s+r.total,0);
+    return `<div class="trip-tile" onclick="openTrip(${t.id})">
+      <button class="tt-del" onclick="event.stopPropagation();deleteTripConfirm(${t.id})" title="Delete trip">×</button>
+      <div class="tt-name">${he(t.tripName)}</div>
+      <div class="tt-meta">${t.people.length} people · ${t.receipts.length} receipt${t.receipts.length!==1?'s':''} · ${t.createdAt}</div>
+      ${total>0?`<div class="tt-total">${fmt(total)} total</div>`:''}
+    </div>`;
+  }).join('');
+  grid.innerHTML = tiles +
+    `<div class="trip-tile new-trip-tile" onclick="openNewTripModal()">
+       <span style="font-size:1.3rem">＋</span> New Trip
+     </div>`;
+}
+
+function openNewTripModal(){
+  document.getElementById('newTripName').value='';
+  document.getElementById('newTripModal').style.display='flex';
+  setTimeout(()=>document.getElementById('newTripName').focus(),50);
+}
+document.getElementById('newTripName').addEventListener('keydown',e=>{ if(e.key==='Enter') createTrip(); });
+
+function createTrip(){
+  const name=document.getElementById('newTripName').value.trim();
+  if(!name){ toast('Enter a trip name'); return; }
+  const trip=newTripObj(name);
+  saveTrip(trip);
+  closeModal('newTripModal');
+  openTrip(trip.id);
+}
+
+function openTrip(id){
+  const store=loadStore();
+  const trip=store.trips.find(t=>t.id===id);
+  if(!trip) return;
+  currentTrip=JSON.parse(JSON.stringify(trip)); // deep copy into memory
+
+  // sync state
+  people=currentTrip.people;
+  receipts=currentTrip.receipts;
+  pendingItems=[];
+  editingReceiptId=null;
+  itemSplitMode='equal';
+
+  // update UI
+  const nameParts=currentTrip.tripName.split(' ');
+  const first=nameParts.slice(0,-1).join(' ')||currentTrip.tripName;
+  const last=nameParts.length>1?nameParts[nameParts.length-1]:'';
+  document.getElementById('tripDetailName').innerHTML=
+    he(first)+(last?` <span>${he(last)}</span>`:'');
+  document.getElementById('tripDetailSub').textContent=
+    `${currentTrip.createdAt} · click name to rename`;
+
+  document.getElementById('tripListView').style.display='none';
+  document.getElementById('tripDetailView').style.display='block';
+
+  resetBuilder();
+  renderPeople();
+  renderPaidBy();
+  renderItemSplitUI();
+  renderAll();
+}
+
+function goHome(){
+  persistCurrent();
+  currentTrip=null; people=[]; receipts=[];
+  document.getElementById('tripDetailView').style.display='none';
+  document.getElementById('tripListView').style.display='block';
+  renderTripList();
+}
+
+function deleteTripConfirm(id){
+  const store=loadStore();
+  const t=store.trips.find(x=>x.id===id);
+  if(!t) return;
+  if(!confirm(`Delete "${t.tripName}"? This cannot be undone.`)) return;
+  deleteTrip(id);
+  renderTripList();
+}
+
+function renameTripPrompt(){
+  if(!currentTrip) return;
+  const name=prompt('Rename trip:',currentTrip.tripName);
+  if(!name||!name.trim()) return;
+  currentTrip.tripName=name.trim();
+  persistCurrent();
+  openTrip(currentTrip.id); // re-renders header
+}
+
+function closeModal(id){ document.getElementById(id).style.display='none'; }
+
+// ═══════════════════════════════════════════════════════
+// IMPORT
+// ═══════════════════════════════════════════════════════
+function openImportModal(){
+  document.getElementById('importJSON').value='';
+  document.getElementById('importFile').value='';
+  setImportTab('paste');
+  document.getElementById('importModal').style.display='flex';
+}
+function setImportTab(tab){
+  document.getElementById('itab-paste').classList.toggle('on',tab==='paste');
+  document.getElementById('itab-file').classList.toggle('on',tab==='file');
+  document.getElementById('import-paste').style.display=tab==='paste'?'block':'none';
+  document.getElementById('import-file').style.display=tab==='file'?'block':'none';
+}
+function doImport(){
+  const fileInput=document.getElementById('importFile');
+  if(document.getElementById('itab-file').classList.contains('on') && fileInput.files.length){
+    const reader=new FileReader();
+    reader.onload=e=>{ tryImportJSON(e.target.result); };
+    reader.readAsText(fileInput.files[0]);
+  } else {
+    tryImportJSON(document.getElementById('importJSON').value.trim());
+  }
+}
+function tryImportJSON(raw){
+  try{
+    const data=JSON.parse(raw);
+    if(!data.tripName||!Array.isArray(data.people)||!Array.isArray(data.receipts))
+      throw new Error('Missing required fields');
+    const trip={ id:Date.now(), tripName:data.tripName, people:data.people,
+      receipts:data.receipts, createdAt:data.createdAt||new Date().toLocaleDateString() };
+    saveTrip(trip);
+    closeModal('importModal');
+    toast('Trip imported!');
+    renderTripList();
+    // Ask if they want to open it
+    if(confirm(`"${trip.tripName}" imported. Open it now?`)) openTrip(trip.id);
+  } catch(e){
+    toast('Invalid JSON — check the file format');
+  }
+}
+
+// ═══════════════════════════════════════════════════════
+// TRIP DETAIL STATE
+// ═══════════════════════════════════════════════════════
+let people   = [];
+let receipts = [];
+let pendingItems = [];
+let itemSplitMode = 'equal';
+let editingReceiptId = null;
+
+function he(s){ return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;') }
+function pid(n){ return 'p_'+[...n].map(c=>c.charCodeAt(0).toString(16)).join('') }
+function fmt(v){ return '$'+Math.abs(+v).toFixed(2) }
+let _tt; function toast(m){ const t=document.getElementById('toast'); t.textContent=m; t.classList.add('on'); clearTimeout(_tt); _tt=setTimeout(()=>t.classList.remove('on'),2400) }
+
+// auto-persist whenever receipts/people change
+function persist(){
+  if(!currentTrip) return;
+  currentTrip.people=people;
+  currentTrip.receipts=receipts;
+  saveTrip(currentTrip);
+}
+
+// ═══════════════════════════════════════════════════════
+// PEOPLE
+// ═══════════════════════════════════════════════════════
+function addPerson(){
+  const el=document.getElementById('personInput'), name=el.value.trim();
+  if(!name) return;
+  if(people.includes(name)){ toast('Already added'); el.focus(); return; }
+  people.push(name); el.value=''; el.focus();
+  persist(); renderPeople(); renderPaidBy(); renderItemSplitUI();
+}
+document.getElementById('personInput').addEventListener('keydown',e=>{ if(e.key==='Enter') addPerson(); });
+
+function removePerson(i){
+  const name=people[i];
+  const inUse=receipts.some(r=>r.paidBy===name||r.items.some(it=>name in it.shares));
+  if(inUse&&!confirm(`"${name}" appears in saved receipts. Remove anyway?`)) return;
+  people.splice(i,1); persist();
+  renderPeople(); renderPaidBy(); renderItemSplitUI(); renderAll();
+}
+function renderPeople(){
+  document.getElementById('peopleList').innerHTML=people.length
+    ?people.map((p,i)=>`<div class="pill">${he(p)}<span class="x" onclick="removePerson(${i})">×</span></div>`).join(''):'';
+}
+function renderPaidBy(){
+  const s=document.getElementById('rPaidBy'),cur=s.value;
+  s.innerHTML='<option value="">— who paid? —</option>'+
+    people.map((p,i)=>`<option value="${i}"${String(i)===cur?' selected':''}>${he(p)}</option>`).join('');
+}
+
+// ═══════════════════════════════════════════════════════
+// ITEM SPLIT UI
+// ═══════════════════════════════════════════════════════
+function setItemSplit(mode){
+  itemSplitMode=mode;
+  ['equal','custom','pct'].forEach(m=>document.getElementById('sm-'+m).classList.toggle('on',m===mode));
+  renderItemSplitUI();
+}
+function renderItemSplitUI(){
+  const el=document.getElementById('itemSplitUI');
+  if(!people.length){ el.innerHTML='<span style="color:var(--muted);font-size:.75rem">Add people first.</span>'; return; }
+  if(itemSplitMode==='equal'){
+    el.innerHTML=`<div class="select-all-row">
+      <button class="smode-btn" style="flex:0;padding:.28rem .6rem" onclick="selectAll(true)">All</button>
+      <button class="smode-btn" style="flex:0;padding:.28rem .6rem" onclick="selectAll(false)">None</button>
+    </div><div class="cb-wrap">`+
+      people.map((p,i)=>`<label class="cb-pill"><input type="checkbox" name="isp" value="${i}">${he(p)}</label>`).join('')+
+      `</div>`;
+  } else {
+    const unit=itemSplitMode==='pct'?'%':'$';
+    el.innerHTML=people.map(p=>`
+      <div class="person-share-row">
+        <span class="psn" title="${he(p)}">${he(p)}</span>
+        <input class="psn-input" type="number" id="${pid(p)}_is" placeholder="0" min="0"
+          step="${itemSplitMode==='pct'?'0.1':'0.01'}" oninput="updateItemHint()">
+        <span class="psn-preview" id="${pid(p)}_isp">${unit}</span>
+      </div>`).join('')+`<div class="hint" id="itemHint"></div>`;
+  }
+}
+function selectAll(v){ document.querySelectorAll('input[name="isp"]').forEach(c=>c.checked=v); }
+
+function updateItemHint(){
+  const price=parseFloat(document.getElementById('iPrice').value)||0;
+  if(itemSplitMode==='pct'){
+    let sum=0;
+    people.forEach(p=>{ const v=parseFloat(document.getElementById(pid(p)+'_is')?.value)||0; sum+=v;
+      const el=document.getElementById(pid(p)+'_isp'); if(el) el.textContent=price>0?'$'+(price*v/100).toFixed(2):'%'; });
+    const h=document.getElementById('itemHint'); if(!h) return;
+    if(!sum){h.textContent='';return;}
+    const ok=Math.abs(sum-100)<.06; h.className='hint '+(ok?'ok':'bad');
+    h.textContent=ok?'✓ 100%':`${sum.toFixed(1)}% — must equal 100%`;
+  } else {
+    let sum=0; people.forEach(p=>{ sum+=parseFloat(document.getElementById(pid(p)+'_is')?.value)||0; });
+    const h=document.getElementById('itemHint'); if(!h) return;
+    if(!sum||!price){h.textContent='';return;}
+    const ok=Math.abs(sum-price)<.02; h.className='hint '+(ok?'ok':'bad');
+    h.textContent=ok?`✓ Adds up to ${fmt(price)}`:`${fmt(sum)} of ${fmt(price)} (${(sum-price>0?'+':'')}${(sum-price).toFixed(2)})`;
+  }
+}
+
+// ═══════════════════════════════════════════════════════
+// ADD / EDIT / REMOVE PENDING ITEMS
+// ═══════════════════════════════════════════════════════
+function addItem(){
+  const name=document.getElementById('iName').value.trim();
+  const price=parseFloat(document.getElementById('iPrice').value)||0;
+  if(!name){ toast('Enter an item name'); return; }
+  if(price<=0){ toast('Enter a valid price'); return; }
+  if(!people.length){ toast('Add people first'); return; }
+  let shares={};
+  if(itemSplitMode==='equal'){
+    const checked=[...document.querySelectorAll('input[name="isp"]:checked')].map(c=>+c.value);
+    if(!checked.length){ toast('Select at least one person'); return; }
+    checked.forEach(i=>shares[people[i]]=price/checked.length);
+  } else if(itemSplitMode==='pct'){
+    let sumPct=0;
+    people.forEach(p=>{ const v=parseFloat(document.getElementById(pid(p)+'_is')?.value)||0; if(v>0) shares[p]=price*v/100; sumPct+=v; });
+    if(Math.abs(sumPct-100)>.1){ toast(`Percentages must total 100% (got ${sumPct.toFixed(1)}%)`); return; }
+    if(!Object.keys(shares).length){ toast('Assign percentages'); return; }
+  } else {
+    let sumAmt=0;
+    people.forEach(p=>{ const v=parseFloat(document.getElementById(pid(p)+'_is')?.value)||0; if(v>0) shares[p]=v; sumAmt+=v; });
+    if(Math.abs(sumAmt-price)>.02){ toast(`Amounts (${fmt(sumAmt)}) must equal item price (${fmt(price)})`); return; }
+    if(!Object.keys(shares).length){ toast('Enter amounts'); return; }
+  }
+  pendingItems.push({id:Date.now(), name, price, shares, splitMode:itemSplitMode});
+  document.getElementById('iName').value='';
+  document.getElementById('iPrice').value='';
+  renderItemSplitUI(); renderPendingItems(); updateTotalPreview();
+  toast('Item added');
+}
+
+function removePendingItem(id){ pendingItems=pendingItems.filter(it=>it.id!==id); renderPendingItems(); updateTotalPreview(); }
+
+function editPendingItem(id){
+  const it=pendingItems.find(x=>x.id===id); if(!it) return;
+  document.getElementById('iName').value=it.name;
+  document.getElementById('iPrice').value=it.price;
+  setItemSplit(it.splitMode||'equal');
+  if(it.splitMode==='equal'){
+    people.forEach((p,i)=>{ const cb=document.querySelector(`input[name="isp"][value="${i}"]`); if(cb) cb.checked=p in it.shares; });
+  } else {
+    people.forEach(p=>{ const el=document.getElementById(pid(p)+'_is'); if(!el) return;
+      el.value=it.splitMode==='pct'?(it.price>0?((it.shares[p]||0)/it.price*100).toFixed(1):0):(it.shares[p]||0).toFixed(2); });
+    updateItemHint();
+  }
+  pendingItems=pendingItems.filter(x=>x.id!==id);
+  renderPendingItems(); updateTotalPreview();
+  document.getElementById('iName').focus();
+  toast('Editing — modify and click + Add Item');
+}
+
+function renderPendingItems(){
+  const el=document.getElementById('pendingItems');
+  if(!pendingItems.length){ el.innerHTML=''; return; }
+  el.innerHTML=pendingItems.map(it=>{
+    const who=Object.entries(it.shares).map(([p,v])=>`${he(p)}: ${fmt(v)}`).join(', ');
+    return `<div class="item-row">
+      <div class="item-left"><div class="item-name">${he(it.name)}</div><div class="item-sub">${who}</div></div>
+      <div class="item-right">
+        <span class="item-price">${fmt(it.price)}</span>
+        <button class="item-rm" onclick="editPendingItem(${it.id})" title="Edit" style="color:var(--accent)">✎</button>
+        <button class="item-rm" onclick="removePendingItem(${it.id})" title="Remove" style="color:var(--accent2)">×</button>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+// ═══════════════════════════════════════════════════════
+// TAX / TIP / FEE
+// ═══════════════════════════════════════════════════════
+function getTaxTip(){
+  const sub=pendingItems.reduce((s,it)=>s+it.price,0);
+  const taxPct=parseFloat(document.getElementById('rTaxPct').value)||0;
+  const tipPct=parseFloat(document.getElementById('rTipPct').value)||0;
+  const tipFlat=parseFloat(document.getElementById('rTipFlat').value)||0;
+  const feePct=parseFloat(document.getElementById('rFeePct').value)||0;
+  const feeLabel=document.getElementById('rFeeLabel').value.trim()||`${feePct}% fee`;
+  const tax=sub*taxPct/100, tip=tipFlat>0?tipFlat:sub*tipPct/100, fee=sub*feePct/100;
+  return {sub,tax,tip,fee,feePct,feeLabel,taxPct,tipPct,tipFlat,total:sub+tax+tip+fee};
+}
+function updateTotalPreview(){
+  const {sub,tax,tip,fee,feePct,feeLabel,taxPct,tipPct,tipFlat,total}=getTaxTip();
+  const row=document.getElementById('totalPreview');
+  if(sub<=0){row.style.display='none';return;}
+  row.style.display='flex';
+  document.getElementById('tpVal').textContent='$'+total.toFixed(2);
+  const parts=[`Subtotal ${fmt(sub)}`];
+  if(tax>.001) parts.push(`Tax ${taxPct}% = ${fmt(tax)}`);
+  if(tip>.001) parts.push(`Tip ${tipFlat>0?fmt(tipFlat):tipPct+'%'} = ${fmt(tip)}`);
+  if(fee>.001) parts.push(`${feeLabel} = ${fmt(fee)}`);
+  document.getElementById('tpBreakdown').textContent=parts.join('  ·  ');
+}
+
+// ═══════════════════════════════════════════════════════
+// SAVE / UPDATE RECEIPT
+// ═══════════════════════════════════════════════════════
+function saveReceipt(){
+  const name=document.getElementById('rName').value.trim();
+  const payerIdx=document.getElementById('rPaidBy').value;
+  if(!name)              { toast('Enter a receipt name'); return; }
+  if(!pendingItems.length){ toast('Add at least one item'); return; }
+  if(payerIdx==='')      { toast('Select who paid'); return; }
+  const {sub,tax,tip,fee,feeLabel,total}=getTaxTip();
+  const paidBy=people[+payerIdx];
+  const personSubs={}; people.forEach(p=>personSubs[p]=0);
+  pendingItems.forEach(it=>Object.entries(it.shares).forEach(([p,v])=>{ if(p in personSubs) personSubs[p]+=v; }));
+  const extrasTotal=tax+tip+fee, shares={};
+  people.forEach(p=>{ const amt=personSubs[p]+(sub>0?extrasTotal*(personSubs[p]/sub):0); if(amt>.001) shares[p]=amt; });
+  const date=editingReceiptId?(receipts.find(r=>r.id===editingReceiptId)?.date||new Date().toLocaleDateString()):new Date().toLocaleDateString();
+  const receipt={id:editingReceiptId||Date.now(), name, paidBy, items:[...pendingItems], sub, tax, tip, fee, feeLabel, total, shares, date};
+  const wasEditing=!!editingReceiptId;
+  if(editingReceiptId){ receipts=receipts.map(r=>r.id===editingReceiptId?receipt:r); }
+  else { receipts.push(receipt); }
+  persist(); resetBuilder(); renderAll();
+  toast(wasEditing?'Receipt updated!':'Receipt saved!');
+}
+
+function resetBuilder(){
+  pendingItems=[]; editingReceiptId=null;
+  ['rName','rTaxPct','rTipPct','rTipFlat','rFeePct','rFeeLabel'].forEach(id=>document.getElementById(id).value='');
+  document.getElementById('rPaidBy').value='';
+  document.getElementById('totalPreview').style.display='none';
+  document.getElementById('builderTitle').textContent='② Build a Receipt';
+  document.getElementById('saveBtn').textContent='Save Receipt →';
+  document.getElementById('cancelEditBtn').style.display='none';
+  renderPendingItems(); renderItemSplitUI();
+}
+
+// ═══════════════════════════════════════════════════════
+// RENDER
+// ═══════════════════════════════════════════════════════
+function renderAll(){
+  renderReceiptLog();
+  const {balances,settlements}=calcBalances();
+  renderBalances(balances); renderSettlements(settlements);
+  renderPersonBreakdown();
+}
+
+function renderReceiptLog(){
+  const el=document.getElementById('receiptLog');
+  if(!receipts.length){el.innerHTML='<div class="empty">No receipts yet.</div>';return;}
+  el.innerHTML=receipts.map(r=>{
+    const isEd=editingReceiptId===r.id;
+    const itemLines=r.items.map(it=>{
+      const who=Object.keys(it.shares).map(he).join(', ');
+      return `<div class="rc-item-line"><span>${he(it.name)} <span style="color:var(--muted);font-size:.65rem">(${who})</span></span><span>${fmt(it.price)}</span></div>`;
+    }).join('');
+    const shareLines=Object.entries(r.shares).map(([p,v])=>`${he(p)}: ${fmt(v)}`).join(' · ');
+    const extras=[];
+    if(r.tax>.001) extras.push(`Tax ${fmt(r.tax)}`);
+    if(r.tip>.001) extras.push(`Tip ${fmt(r.tip)}`);
+    if(r.fee>.001) extras.push(`${he(r.feeLabel||'Fee')} ${fmt(r.fee)}`);
+    const extrasLine=extras.length?`<div class="rc-meta">Subtotal ${fmt(r.sub)} · ${extras.join(' · ')}</div>`:'';
+    return `<div class="receipt-card${isEd?' editing-card':''}">
+      <div style="position:absolute;top:.65rem;right:.55rem;display:flex;gap:.3rem;align-items:center">
+        <button class="item-rm" onclick="editReceipt(${r.id})" title="Edit" style="color:var(--accent);font-size:1rem">✎</button>
+        <button class="item-rm" onclick="removeReceipt(${r.id})" title="Delete" style="color:var(--accent2);font-size:1.1rem">×</button>
+      </div>
+      <div class="rc-head" onclick="toggleReceipt(${r.id})">
+        <div>
+          <div class="rc-name">${he(r.name)}${isEd?'<span style="font-size:.6rem;color:var(--accent);font-family:\'DM Mono\',monospace;font-weight:400;margin-left:.5rem;vertical-align:middle">editing…</span>':''}</div>
+          <div class="rc-meta">Paid by <strong>${he(r.paidBy)}</strong> · ${r.date} · ${r.items.length} item${r.items.length!==1?'s':''}</div>
+        </div>
+        <div style="display:flex;align-items:center;gap:.5rem;flex-shrink:0;margin-left:.5rem;padding-right:3rem">
+          <div class="rc-total">${fmt(r.total)}</div>
+          <span id="chev-${r.id}" style="color:var(--muted);font-size:.75rem;transition:transform .2s;flex-shrink:0">▶</span>
+        </div>
+      </div>
+      <div id="detail-${r.id}" style="display:none">
+        ${extrasLine}
+        <div class="rc-items">${itemLines}</div>
+        <div class="rc-meta" style="margin-top:.4rem;color:var(--text)">${shareLines}</div>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+// ═══════════════════════════════════════════════════════
+// PER-PERSON BREAKDOWN
+// ═══════════════════════════════════════════════════════
+function renderPersonBreakdown(){
+  const el=document.getElementById('personBreakdown');
+  if(!people.length||!receipts.length){el.innerHTML='<div class="empty">Add receipts to see itemized breakdowns.</div>';return;}
+
+  const cards=people.map(p=>{
+    // collect all items this person is part of, across all receipts
+    const lines=[];
+    let itemTotal=0, extraTotal=0;
+
+    receipts.forEach(r=>{
+      const personItemSub=r.items.reduce((s,it)=>s+(it.shares[p]||0),0);
+      if(personItemSub<.001) return; // person has nothing on this receipt
+
+      r.items.forEach(it=>{
+        if((it.shares[p]||0)<.001) return;
+        lines.push({label:`${it.name} <span style="color:var(--muted);font-size:.65rem">(${he(r.name)})</span>`, val:it.shares[p]});
+        itemTotal+=it.shares[p];
+      });
+
+      // proportional tax/tip/fee for this person on this receipt
+      const ratio=r.sub>0?personItemSub/r.sub:0;
+      if(r.tax>.001){ const v=r.tax*ratio; lines.push({label:`Tax <span style="color:var(--muted);font-size:.65rem">(${he(r.name)})</span>`,val:v,dim:true}); extraTotal+=v; }
+      if(r.tip>.001){ const v=r.tip*ratio; lines.push({label:`Tip <span style="color:var(--muted);font-size:.65rem">(${he(r.name)})</span>`,val:v,dim:true}); extraTotal+=v; }
+      if(r.fee>.001){ const v=r.fee*ratio; lines.push({label:`${he(r.feeLabel||'Fee')} <span style="color:var(--muted);font-size:.65rem">(${he(r.name)})</span>`,val:v,dim:true}); extraTotal+=v; }
+    });
+
+    if(!lines.length) return `<div class="breakdown-person"><div class="bp-name">${he(p)}</div><div style="font-size:.72rem;color:var(--muted)">No charges</div></div>`;
+
+    const lineHTML=lines.map(l=>`<div class="bp-line${l.dim?' fee':''}"><span>${l.label}</span><span>${fmt(l.val)}</span></div>`).join('');
+    return `<div class="breakdown-person">
+      <div class="bp-name">${he(p)}</div>
+      ${lineHTML}
+      <div class="bp-total"><span>Total</span><span>${fmt(itemTotal+extraTotal)}</span></div>
+    </div>`;
+  }).join('');
+
+  el.innerHTML=`<div class="breakdown-grid">${cards}</div>`;
+}
+
+function toggleReceipt(id){
+  const d=document.getElementById('detail-'+id), c=document.getElementById('chev-'+id);
+  const open=d.style.display==='none'; d.style.display=open?'block':'none'; c.style.transform=open?'rotate(90deg)':'';
+}
+
+function removeReceipt(id){
+  if(editingReceiptId===id) resetBuilder();
+  receipts=receipts.filter(r=>r.id!==id); persist(); renderAll();
+}
+
+function editReceipt(id){
+  const r=receipts.find(x=>x.id===id); if(!r) return;
+  if((pendingItems.length||document.getElementById('rName').value.trim())&&editingReceiptId!==id){
+    if(!confirm('Discard unsaved builder items and edit this receipt?')) return;
+  }
+  editingReceiptId=id;
+  document.getElementById('rName').value=r.name;
+  const payerIdx=people.indexOf(r.paidBy);
+  document.getElementById('rPaidBy').value=payerIdx>=0?payerIdx:'';
+  document.getElementById('rTaxPct').value=r.tax>0&&r.sub>0?(r.tax/r.sub*100).toFixed(3):'';
+  document.getElementById('rTipFlat').value=r.tip>0?r.tip.toFixed(2):'';
+  document.getElementById('rTipPct').value='';
+  document.getElementById('rFeePct').value=r.fee>0&&r.sub>0?(r.fee/r.sub*100).toFixed(3):'';
+  document.getElementById('rFeeLabel').value=r.feeLabel||'';
+  pendingItems=[...r.items.map(it=>({...it,id:it.id||Date.now()+Math.random()}))];
+  document.getElementById('builderTitle').textContent='② Edit Receipt';
+  document.getElementById('saveBtn').textContent='Update Receipt →';
+  document.getElementById('cancelEditBtn').style.display='inline-block';
+  renderPendingItems(); updateTotalPreview(); renderItemSplitUI(); renderReceiptLog();
+  document.getElementById('builderCard').scrollIntoView({behavior:'smooth',block:'start'});
+  toast('Editing — modify and click Update Receipt');
+}
+
+// ═══════════════════════════════════════════════════════
+// BALANCES & SETTLEMENTS
+// ═══════════════════════════════════════════════════════
+function calcBalances(){
+  const net={}; people.forEach(p=>net[p]=0);
+  receipts.forEach(r=>{
+    if(r.paidBy in net) net[r.paidBy]+=r.total;
+    Object.entries(r.shares).forEach(([p,v])=>{ if(p in net) net[p]-=v; });
+  });
+  const balArr=Object.entries(net).map(([p,v])=>({p,v:+v.toFixed(2)})).filter(x=>Math.abs(x.v)>.004);
+  return {balances:net, settlements:balArr.length<=10?minTransactions(balArr):greedySettle(balArr)};
+}
+function greedySettle(bals){
+  const cr=[],de=[]; bals.forEach(({p,v})=>{ if(v>.004)cr.push({p,v}); else if(v<-.004)de.push({p,v:-v}); });
+  cr.sort((a,b)=>b.v-a.v); de.sort((a,b)=>b.v-a.v);
+  const out=[]; let ci=0,di=0;
+  while(ci<cr.length&&di<de.length){ const pay=Math.min(cr[ci].v,de[di].v); out.push({from:de[di].p,to:cr[ci].p,amount:pay}); cr[ci].v-=pay; de[di].v-=pay; if(cr[ci].v<.004)ci++; if(de[di].v<.004)di++; }
+  return out;
+}
+function minTransactions(bals){
+  const vals=bals.map(x=>x.v), names=bals.map(x=>x.p); let best={count:Infinity,txns:[]};
+  function dfs(arr,txns){
+    const active=arr.map((v,i)=>({v,i})).filter(x=>Math.abs(x.v)>.004);
+    if(!active.length){ if(txns.length<best.count) best={count:txns.length,txns:[...txns]}; return; }
+    if(txns.length>=best.count-1) return;
+    const first=active[0];
+    for(let k=1;k<active.length;k++){
+      const other=active[k]; if(first.v*other.v>=0) continue;
+      const pay=Math.min(Math.abs(first.v),Math.abs(other.v));
+      let from,to; if(first.v<0){from=names[first.i];to=names[other.i];}else{from=names[other.i];to=names[first.i];}
+      const na=[...arr]; na[first.i]=+(arr[first.i]+(first.v<0?pay:-pay)).toFixed(4); na[other.i]=+(arr[other.i]+(other.v<0?pay:-pay)).toFixed(4);
+      txns.push({from,to,amount:pay}); dfs(na,txns); txns.pop();
+    }
+  }
+  dfs(vals,[]); return best.txns.length?best.txns:greedySettle(bals);
+}
+
+function renderBalances(balances){
+  const el=document.getElementById('balances');
+  if(!people.length){el.innerHTML='<div class="empty">Add people first.</div>';return;}
+  const ref=new Set([...receipts.map(r=>r.paidBy),...receipts.flatMap(r=>Object.keys(r.shares))]);
+  const orphans=[...ref].filter(p=>!people.includes(p));
+  const total=receipts.reduce((s,r)=>s+r.total,0);
+  const rows=people.map(p=>{ const v=balances[p]||0; let cls,label;
+    if(v>.005){cls='owed';label=`is owed ${fmt(v)}`}else if(v<-.005){cls='owe';label=`owes ${fmt(-v)}`}else{cls='even';label='settled ✓'}
+    return `<tr><td>${he(p)}</td><td><span class="${cls}">${label}</span></td></tr>`; }).join('');
+  el.innerHTML=(orphans.length?`<div class="warn-box">⚠ Removed people (${orphans.map(he).join(', ')}) still in receipts — balances may be off.</div>`:'')+
+    `<table class="sum-table"><thead><tr><th>Person</th><th style="text-align:right">Balance</th></tr></thead><tbody>${rows}</tbody></table>`+
+    `<div class="total-bar"><span>Total expenses</span><span>${fmt(total)}</span></div>`;
+}
+function renderSettlements(settlements){
+  const el=document.getElementById('settlements');
+  if(!settlements.length){el.innerHTML=`<div class="empty">${receipts.length?'Everyone is settled! ✓':'Nothing to settle yet.'}</div>`;return;}
+  el.innerHTML=settlements.map(s=>`<div class="settle-item"><span>${he(s.from)}</span><span class="arr">→</span><span>${he(s.to)}</span><span class="s-amt">${fmt(s.amount)}</span></div>`).join('');
+}
+
+// ═══════════════════════════════════════════════════════
+// SHARE VIA URL
+// ═══════════════════════════════════════════════════════
+function shareViaURL(){
+  if(!currentTrip){ toast('No trip open'); return; }
+  const data={tripName:currentTrip.tripName,createdAt:currentTrip.createdAt,people,receipts};
+  const json=JSON.stringify(data);
+  // encode as base64 in the URL hash
+  const encoded=btoa(unescape(encodeURIComponent(json)));
+  const url=location.origin+location.pathname+'#trip='+encoded;
+  navigator.clipboard?.writeText(url).then(()=>toast('Share link copied!')).catch(()=>{
+    prompt('Copy this link:',url); toast('Link ready — copy from the box');
+  });
+}
+
+function checkURLTrip(){
+  const hash=location.hash;
+  if(!hash.startsWith('#trip=')) return;
+  try{
+    const encoded=hash.slice(6);
+    const json=decodeURIComponent(escape(atob(encoded)));
+    const data=JSON.parse(json);
+    if(!data.tripName||!Array.isArray(data.people)||!Array.isArray(data.receipts)) return;
+    // clear hash so refreshing doesn't re-import
+    history.replaceState(null,'',location.pathname);
+    const existing=getTrips().find(t=>t.tripName===data.tripName&&t.createdAt===data.createdAt);
+    if(existing){
+      if(confirm(`"${data.tripName}" is already saved. Open it?`)){ openTrip(existing.id); }
+      return;
+    }
+    if(confirm(`Import shared trip "${data.tripName}"?`)){
+      const trip={id:Date.now(),tripName:data.tripName,people:data.people,receipts:data.receipts,createdAt:data.createdAt||new Date().toLocaleDateString()};
+      saveTrip(trip); renderTripList(); openTrip(trip.id);
+    }
+  } catch(e){ /* malformed hash, ignore */ }
+}
+
+// ═══════════════════════════════════════════════════════
+// EXPORT
+// ═══════════════════════════════════════════════════════
+function buildText(){
+  if(!receipts.length) return 'No receipts yet.';
+  const {balances,settlements}=calcBalances();
+  const total=receipts.reduce((s,r)=>s+r.total,0);
+  let o=`=== ${currentTrip?.tripName||'TRIP'} EXPENSE SUMMARY ===\n\nTotal: ${fmt(total)}\n\n--- RECEIPTS ---\n`;
+  receipts.forEach(r=>{ o+=`\n${r.name}  ${fmt(r.total)}\nPaid by ${r.paidBy}  (${r.date})\n`;
+    r.items.forEach(it=>{ o+=`  ${it.name}: ${fmt(it.price)}  [${Object.keys(it.shares).join(', ')}]\n`; });
+    const extras=[];
+    if(r.tax>.001) extras.push(`Tax ${fmt(r.tax)}`);
+    if(r.tip>.001) extras.push(`Tip ${fmt(r.tip)}`);
+    if(r.fee>.001) extras.push(`${r.feeLabel||'Fee'} ${fmt(r.fee)}`);
+    if(extras.length) o+=`  ${extras.join('  ')}\n`;
+    o+='  Shares: '+Object.entries(r.shares).map(([p,v])=>`${p} ${fmt(v)}`).join(', ')+'\n'; });
+  o+='\n--- BALANCES ---\n'; people.forEach(p=>{ const v=balances[p]||0; o+=v>.005?`${p}: is owed ${fmt(v)}\n`:v<-.005?`${p}: owes ${fmt(-v)}\n`:`${p}: settled\n`; });
+  o+='\n--- SETTLEMENTS ---\n'; if(!settlements.length) o+='Everyone is settled!\n'; else settlements.forEach(s=>o+=`${s.from} → ${s.to}: ${fmt(s.amount)}\n`);
+  return o;
+}
+function copyText(){
+  const text=buildText();
+  navigator.clipboard?.writeText(text).then(()=>toast('Copied!')).catch(()=>{ const ta=Object.assign(document.createElement('textarea'),{value:text,style:'position:fixed;opacity:0'}); document.body.appendChild(ta);ta.select();document.execCommand('copy');ta.remove();toast('Copied!'); });
+}
+function downloadJSON(){
+  if(!currentTrip){toast('No trip open');return;}
+  const data={tripName:currentTrip.tripName,createdAt:currentTrip.createdAt,people,receipts};
+  const a=Object.assign(document.createElement('a'),{href:URL.createObjectURL(new Blob([JSON.stringify(data,null,2)],{type:'application/json'})),download:`${currentTrip.tripName.replace(/\s+/g,'-')}.json`});
+  a.click(); toast('JSON downloaded!');
+}
+function downloadCSV(){
+  if(!receipts.length){toast('No receipts to export');return;}
+  const {balances,settlements}=calcBalances();
+  let csv='RECEIPTS\nReceipt,Item,Item Price,Paid By,Date,'+people.map(p=>`"${p}"`).join(',')+'\n';
+  receipts.forEach(r=>{
+    r.items.forEach(it=>{ csv+=`"${r.name}","${it.name}",${it.price.toFixed(2)},"${r.paidBy}","${r.date}",`; csv+=people.map(p=>(it.shares[p]||0).toFixed(2)).join(',')+'\n'; });
+    const extras=r.tax+r.tip+(r.fee||0);
+    if(extras>.001){ csv+=`"${r.name}","Tax+Tip+Fees",${extras.toFixed(2)},"${r.paidBy}","${r.date}",`;
+      csv+=people.map(p=>{ const s=r.items.reduce((x,it)=>x+(it.shares[p]||0),0); return r.sub>0?(extras*(s/r.sub)).toFixed(2):'0.00'; }).join(',')+'\n'; }
+  });
+  csv+='\nFINAL SHARES\nReceipt,'+people.map(p=>`"${p}"`).join(',')+'\n'; receipts.forEach(r=>{ csv+=`"${r.name}",`+people.map(p=>(r.shares[p]||0).toFixed(2)).join(',')+'\n'; });
+  csv+='\nBALANCES\nPerson,Net\n'+people.map(p=>`"${p}",${(balances[p]||0).toFixed(2)}`).join('\n');
+  csv+='\n\nSETTLEMENTS\nFrom,To,Amount\n'+settlements.map(s=>`"${s.from}","${s.to}",${s.amount.toFixed(2)}`).join('\n');
+  const a=Object.assign(document.createElement('a'),{href:URL.createObjectURL(new Blob([csv],{type:'text/csv'})),download:`${(currentTrip?.tripName||'trip').replace(/\s+/g,'-')}.csv`});
+  a.click(); toast('CSV downloaded!');
+}
+function clearCurrentTrip(){
+  if(!confirm('Clear all people and receipts for this trip?')) return;
+  people=[]; receipts=[]; persist(); resetBuilder(); renderPeople(); renderPaidBy(); renderItemSplitUI(); renderAll();
+  toast('Trip data cleared');
+}
+
+// ═══════════════════════════════════════════════════════
+// BOOT
+// ═══════════════════════════════════════════════════════
+renderTripList();
+checkURLTrip();
+</script>
+</body>
+</html>
