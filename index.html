@@ -1845,212 +1845,193 @@ function openSummaryCard(){
 function drawSummaryCard(){
   const canvas = document.getElementById('summaryCanvas');
   const { settlements } = calcBalances();
-  const total  = receipts.reduce((s,r) => s+r.total, 0);
-  const sym    = currentTrip?.currency?.symbol || '$';
-  const rate   = currentTrip?.currency?.rate   || 1;
-  const money  = v => sym + Math.abs(+v * rate).toFixed(2);
+  const total    = receipts.reduce((s,r) => s+r.total, 0);
+  const sym      = currentTrip?.currency?.symbol || '$';
+  const rate     = currentTrip?.currency?.rate   || 1;
+  const money    = v => sym + Math.abs(+v * rate).toFixed(2);
   const tripName = currentTrip?.tripName || 'Trip';
+  const MONO     = 'ui-monospace, "SF Mono", Menlo, monospace';
+  const SERIF    = 'Georgia, "Times New Roman", serif';
+  const W        = 560;
+  const PADDING  = 32;
+  const FOOTER   = 30; // space reserved below last content for footer
 
-  const MONO   = 'ui-monospace, "SF Mono", Menlo, monospace';
-  const SERIF  = 'Georgia, "Times New Roman", serif';
-  const W      = 560;
-  const PADDING = 32;
-  const ITEM_INDENT = 16; // indent for item rows inside a receipt
+  // ── Two-pass: first measure, then draw ───────────────
+  // Pass 1: measure-only (no background, invisible canvas)
+  const scratch = document.createElement('canvas');
+  scratch.width = W; scratch.height = 10;
+  const mctx = scratch.getContext('2d');
+  const finalY = paint(mctx, W, PADDING, MONO, SERIF, tripName, total, money, settlements, false);
+  const H = Math.max(400, Math.ceil(finalY + FOOTER));
 
-  // ── Pre-measure height ────────────────────────────────
-  // We need to know total height before drawing the background.
-  // Count logical line units:
-  //  header block: 2 lines + gap + divider
-  //  per receipt: receipt-header + N item lines + extras line (if any) + small gap + divider
-  //  settlements section: header + N lines
-  //  footer: 1 line
-
-  const LINE_H      = 24;
-  const ITEM_LINE_H = 21;
-  const SEC_GAP     = 18;
-  const RECEIPT_GAP = 10;
-
-  let estimatedH = PADDING + 18      // top padding + name
-    + LINE_H * 1.15                  // name
-    + LINE_H                         // date/total
-    + SEC_GAP                        // gap before divider
-    + SEC_GAP * 0.65;                // after divider
-
-  receipts.forEach(r => {
-    estimatedH += 22;                // receipt header ("RECEIPT NAME")
-    r.items.forEach(() => { estimatedH += ITEM_LINE_H; });
-    const hasExtras = r.tax>.001 || r.tip>.001 || r.fee>.001;
-    if(hasExtras) estimatedH += ITEM_LINE_H;
-    estimatedH += RECEIPT_GAP + 1;  // small gap + divider between receipts
-  });
-
-  estimatedH += SEC_GAP * 0.5 + SEC_GAP * 0.65; // gap before settlements
-  estimatedH += 22;                // SETTLEMENTS header
-  estimatedH += Math.max(settlements.length, 1) * LINE_H * 0.95;
-  estimatedH += 30;                // footer
-
-  const H = Math.max(400, Math.ceil(estimatedH));
-
-  // ── HiDPI setup ───────────────────────────────────────
+  // Pass 2: real draw at HiDPI
   const DPR = Math.min(window.devicePixelRatio || 2, 3);
   canvas.width  = W * DPR;
   canvas.height = H * DPR;
-  canvas.style.width   = W + 'px';
-  canvas.style.height  = H + 'px';
+  canvas.style.width    = W + 'px';
+  canvas.style.height   = H + 'px';
   canvas.style.maxWidth = '100%';
-
   const ctx = canvas.getContext('2d');
   ctx.imageSmoothingEnabled = true;
   ctx.imageSmoothingQuality = 'high';
   ctx.scale(DPR, DPR);
   ctx.clearRect(0, 0, W, H);
 
-  // ── Background ────────────────────────────────────────
+  // Background
   ctx.fillStyle = '#161616';
   roundRect(ctx, 0, 0, W, H, 12); ctx.fill();
-
   const grad = ctx.createLinearGradient(0, 0, 0, H);
   grad.addColorStop(0, 'rgba(255,255,255,0.03)');
   grad.addColorStop(1, 'rgba(0,0,0,0.12)');
   ctx.fillStyle = grad;
   roundRect(ctx, 0, 0, W, H, 12); ctx.fill();
-
   ctx.fillStyle = '#e8c97a';
   ctx.fillRect(0, 0, W, 5);
 
-  let y = PADDING + 18;
+  // Content
+  const endY = paint(ctx, W, PADDING, MONO, SERIF, tripName, total, money, settlements, true);
 
-  // ── Trip name ─────────────────────────────────────────
-  ctx.font = `700 24px ${SERIF}`;
-  ctx.fillStyle = '#f0ede6';
-  ctx.textBaseline = 'alphabetic';
-  ctx.fillText(tripName, PADDING, y);
+  // Footer
+  ctx.font = `11px ${MONO}`; ctx.fillStyle = '#2e2e2e';
+  const ft = 'Trip Splitter';
+  ctx.fillText(ft, (W - ctx.measureText(ft).width) / 2, endY + 18);
+}
+
+// ── Shared draw/measure routine ───────────────────────
+// When draw=false it only advances y without painting (for height measurement).
+// Returns the final y position after all content.
+function paint(ctx, W, P, MONO, SERIF, tripName, total, money, settlements, draw){
+  const LINE_H      = 24;
+  const ITEM_LINE_H = 21;
+  const SEC_GAP     = 18;
+  const RECEIPT_GAP = 10;
+  const INDENT      = 16;
+  const dateStr = currentTrip?.createdAt || new Date().toLocaleDateString();
+
+  function txt(text, x, y, font, color){
+    if(!draw) return;
+    ctx.font = font; ctx.fillStyle = color;
+    ctx.fillText(text, x, y);
+  }
+  function line(y){
+    if(!draw) return;
+    ctx.strokeStyle = '#2a2a2a'; ctx.lineWidth = 1; ctx.setLineDash([]);
+    ctx.beginPath(); ctx.moveTo(P, y); ctx.lineTo(W-P, y); ctx.stroke();
+  }
+  function dashLine(y){
+    if(!draw) return;
+    ctx.strokeStyle = '#222'; ctx.lineWidth = 1; ctx.setLineDash([3,4]);
+    ctx.beginPath(); ctx.moveTo(P+INDENT, y); ctx.lineTo(W-P, y); ctx.stroke();
+    ctx.setLineDash([]);
+  }
+  function secHead(label, y){
+    txt(label, P, y, `700 10px ${MONO}`, '#444');
+    return y + 22;
+  }
+  function trunc(text, maxW){
+    if(!draw) return text; // skip measure in dry-run
+    ctx.font = ctx.font; // keep current font
+    if(ctx.measureText(text).width <= maxW) return text;
+    while(text.length > 1 && ctx.measureText(text+'…').width > maxW) text=text.slice(0,-1);
+    return text+'…';
+  }
+  function rAlign(text, rightEdge, y, font, color){
+    if(!draw) return;
+    ctx.font = font; ctx.fillStyle = color;
+    ctx.fillText(text, rightEdge - ctx.measureText(text).width, y);
+  }
+
+  if(draw){ ctx.textBaseline = 'alphabetic'; }
+
+  let y = P + 18;
+
+  // Trip name
+  txt(tripName, P, y, `700 24px ${SERIF}`, '#f0ede6');
   y += LINE_H * 1.15;
 
-  // ── Date + total ──────────────────────────────────────
-  ctx.font = `12px ${MONO}`;
-  ctx.fillStyle = '#555';
-  const dateStr = currentTrip?.createdAt || new Date().toLocaleDateString();
-  ctx.fillText(dateStr, PADDING, y);
-  ctx.font = `700 14px ${MONO}`;
-  ctx.fillStyle = '#e8c97a';
-  const totalStr = money(total);
-  const totalW = ctx.measureText(totalStr).width;
-  ctx.fillText(totalStr, W - PADDING - totalW, y);
+  // Date + total
+  txt(dateStr, P, y, `12px ${MONO}`, '#555');
+  rAlign(money(total), W-P, y, `700 14px ${MONO}`, '#e8c97a');
   y += SEC_GAP;
 
-  // divider
-  divider(ctx, PADDING, y, W); y += SEC_GAP * 0.65;
+  line(y); y += SEC_GAP * 0.65;
 
-  // ── Per-receipt item breakdowns ───────────────────────
+  // ── Receipts with item breakdown ─────────────────────
   receipts.forEach((r, ri) => {
-    // Receipt name header row
-    ctx.font = `700 13px ${MONO}`;
-    ctx.fillStyle = '#f0ede6';
-    const rNameMax = W - PADDING*2 - 90;
-    ctx.fillText(truncate(ctx, r.name, rNameMax), PADDING, y);
-    ctx.fillStyle = '#e8c97a';
-    const rtw = ctx.measureText(money(r.total)).width;
-    ctx.fillText(money(r.total), W - PADDING - rtw, y);
+    // Receipt header
+    const rNameMax = W - P*2 - 90;
+    if(draw){
+      ctx.font = `700 13px ${MONO}`; ctx.fillStyle = '#f0ede6';
+      ctx.fillText(trunc(r.name, rNameMax), P, y);
+      rAlign(money(r.total), W-P, y, `700 13px ${MONO}`, '#e8c97a');
+    }
     y += ITEM_LINE_H + 2;
 
-    // Paid by line
-    ctx.font = `11px ${MONO}`;
-    ctx.fillStyle = '#555';
-    ctx.fillText(`paid by ${r.paidBy}`, PADDING + ITEM_INDENT, y);
+    // Paid-by subline
+    txt(`paid by ${r.paidBy}`, P+INDENT, y, `11px ${MONO}`, '#555');
     y += ITEM_LINE_H - 2;
 
-    // Item lines
+    // Items
     r.items.forEach(it => {
       const who = Object.keys(it.shares).join(', ');
-      ctx.font = `12px ${MONO}`;
-      ctx.fillStyle = '#8a8580';
-
-      // bullet
-      ctx.fillText('·', PADDING + ITEM_INDENT, y);
-
-      // item name (truncated)
-      const itemAmtStr = money(it.price);
-      const amtW = ctx.measureText(itemAmtStr).width;
-      const nameMax = W - PADDING - ITEM_INDENT - 14 - amtW - 10;
-      ctx.fillStyle = '#c8c4bc';
-      ctx.fillText(truncate(ctx, it.name, nameMax), PADDING + ITEM_INDENT + 12, y);
-
-      // amount right-aligned
-      ctx.fillStyle = '#a09890';
-      ctx.fillText(itemAmtStr, W - PADDING - amtW, y);
-
-      // who row
+      if(draw){
+        ctx.font = `12px ${MONO}`;
+        txt('·', P+INDENT, y, `12px ${MONO}`, '#8a8580');
+        const amtStr = money(it.price);
+        const amtW   = ctx.measureText(amtStr).width;
+        const nmMax  = W - P - INDENT - 14 - amtW - 10;
+        ctx.fillStyle = '#c8c4bc';
+        ctx.fillText(trunc(it.name, nmMax), P+INDENT+12, y);
+        rAlign(amtStr, W-P, y, `12px ${MONO}`, '#a09890');
+      }
       y += ITEM_LINE_H - 3;
-      ctx.font = `10px ${MONO}`;
-      ctx.fillStyle = '#484440';
-      ctx.fillText(truncate(ctx, who, W - PADDING*2 - ITEM_INDENT - 10), PADDING + ITEM_INDENT + 12, y);
+      // Who line
+      txt(who, P+INDENT+12, y, `10px ${MONO}`, '#484440');
       y += ITEM_LINE_H - 2;
     });
 
-    // Tax / tip / fee extras line
+    // Extras (tax/tip/fee)
     const extras = [];
     if(r.tax>.001) extras.push(`Tax ${money(r.tax)}`);
     if(r.tip>.001) extras.push(`Tip ${money(r.tip)}`);
     if(r.fee>.001) extras.push(`${r.feeLabel||'Fee'} ${money(r.fee)}`);
     if(extras.length){
-      ctx.font = `11px ${MONO}`;
-      ctx.fillStyle = '#484440';
-      ctx.fillText(extras.join('  ·  '), PADDING + ITEM_INDENT + 12, y);
+      txt(extras.join('  ·  '), P+INDENT+12, y, `11px ${MONO}`, '#484440');
       y += ITEM_LINE_H;
     }
 
     y += RECEIPT_GAP;
 
-    // Light divider between receipts (skip after last one)
+    // Dashed separator between receipts
     if(ri < receipts.length - 1){
-      ctx.strokeStyle = '#222'; ctx.lineWidth = 1;
-      ctx.setLineDash([3, 4]);
-      ctx.beginPath(); ctx.moveTo(PADDING + ITEM_INDENT, y); ctx.lineTo(W - PADDING, y); ctx.stroke();
-      ctx.setLineDash([]);
+      dashLine(y);
       y += RECEIPT_GAP;
     }
   });
 
   y += SEC_GAP * 0.5;
-  divider(ctx, PADDING, y, W); y += SEC_GAP * 0.65;
+  line(y); y += SEC_GAP * 0.65;
 
-  // ── Settlements ───────────────────────────────────────
-  y = sectionHeader(ctx, 'SETTLEMENTS', PADDING, y);
+  // ── Settlements ──────────────────────────────────────
+  y = secHead('SETTLEMENTS', y);
   if(!settlements.length){
-    ctx.font = `12px ${MONO}`; ctx.fillStyle = '#444';
-    ctx.fillText('Everyone is settled ✓', PADDING, y);
+    txt('Everyone is settled ✓', P, y, `12px ${MONO}`, '#444');
     y += LINE_H;
   } else {
     settlements.forEach(s => {
-      ctx.font = `13px ${MONO}`; ctx.fillStyle = '#c8c4bc';
-      ctx.fillText(truncate(ctx, `${s.from} → ${s.to}`, W - PADDING*2 - 90), PADDING, y);
-      ctx.fillStyle = '#e8c97a';
-      const sw = ctx.measureText(money(s.amount)).width;
-      ctx.fillText(money(s.amount), W - PADDING - sw, y);
+      const label = `${s.from} → ${s.to}`;
+      if(draw){
+        ctx.font = `13px ${MONO}`; ctx.fillStyle = '#c8c4bc';
+        ctx.fillText(trunc(label, W-P*2-90), P, y);
+        rAlign(money(s.amount), W-P, y, `13px ${MONO}`, '#e8c97a');
+      }
       y += LINE_H * 0.95;
     });
   }
 
-  // ── Footer ────────────────────────────────────────────
-  ctx.font = `11px ${MONO}`; ctx.fillStyle = '#2e2e2e';
-  const fw = ctx.measureText('Trip Splitter').width;
-  ctx.fillText('Trip Splitter', (W - fw) / 2, H - 14);
+  return y;
 }
 
-function divider(ctx, x, y, W){
-  ctx.strokeStyle = '#2a2a2a'; ctx.lineWidth = 1; ctx.setLineDash([]);
-  ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(W - x, y); ctx.stroke();
-}
-
-function sectionHeader(ctx, text, x, y){
-  ctx.font = '700 10px ui-monospace, "SF Mono", Menlo, monospace';
-  ctx.fillStyle = '#444';
-  ctx.letterSpacing = '0.1em';
-  ctx.fillText(text, x, y);
-  ctx.letterSpacing = '0';
-  return y + 22;
-}
 function truncate(ctx, text, maxW){
   if(ctx.measureText(text).width <= maxW) return text;
   while(text.length > 1 && ctx.measureText(text + '…').width > maxW) text = text.slice(0,-1);
