@@ -1898,121 +1898,223 @@ function drawSummaryCard(){
 }
 
 // ── Shared draw/measure routine ───────────────────────
-// When draw=false it only advances y without painting (for height measurement).
-// Returns the final y position after all content.
+// draw=false → only advances y (height measurement pass)
+// Returns final y after all content.
 function paint(ctx, W, P, MONO, SERIF, tripName, total, money, settlements, draw){
-  const LINE_H      = 24;
-  const ITEM_LINE_H = 21;
-  const SEC_GAP     = 18;
-  const RECEIPT_GAP = 10;
-  const INDENT      = 16;
+  const LINE_H  = 24;
+  const SEC_GAP = 18;
   const dateStr = currentTrip?.createdAt || new Date().toLocaleDateString();
+  const SIMPLE_THRESHOLD = 4; // ≤ this many receipts → inline mode
 
+  // ── helpers ──────────────────────────────────────────
   function txt(text, x, y, font, color){
     if(!draw) return;
-    ctx.font = font; ctx.fillStyle = color;
-    ctx.fillText(text, x, y);
+    ctx.font=font; ctx.fillStyle=color; ctx.fillText(text, x, y);
   }
-  function line(y){
+  function rAlign(text, rightEdge, y, font, color){
     if(!draw) return;
-    ctx.strokeStyle = '#2a2a2a'; ctx.lineWidth = 1; ctx.setLineDash([]);
-    ctx.beginPath(); ctx.moveTo(P, y); ctx.lineTo(W-P, y); ctx.stroke();
+    ctx.font=font; ctx.fillStyle=color;
+    ctx.fillText(text, rightEdge - ctx.measureText(text).width, y);
   }
-  function dashLine(y){
+  function solidLine(y){
     if(!draw) return;
-    ctx.strokeStyle = '#222'; ctx.lineWidth = 1; ctx.setLineDash([3,4]);
-    ctx.beginPath(); ctx.moveTo(P+INDENT, y); ctx.lineTo(W-P, y); ctx.stroke();
-    ctx.setLineDash([]);
+    ctx.strokeStyle='#2a2a2a'; ctx.lineWidth=1; ctx.setLineDash([]);
+    ctx.beginPath(); ctx.moveTo(P,y); ctx.lineTo(W-P,y); ctx.stroke();
   }
   function secHead(label, y){
     txt(label, P, y, `700 10px ${MONO}`, '#444');
     return y + 22;
   }
+  // measure-aware truncation (works in both passes)
   function trunc(text, maxW){
-    if(!draw) return text; // skip measure in dry-run
-    ctx.font = ctx.font; // keep current font
+    if(!draw) return text;
+    ctx.font = ctx.font;
     if(ctx.measureText(text).width <= maxW) return text;
-    while(text.length > 1 && ctx.measureText(text+'…').width > maxW) text=text.slice(0,-1);
+    while(text.length>1 && ctx.measureText(text+'…').width>maxW) text=text.slice(0,-1);
     return text+'…';
   }
-  function rAlign(text, rightEdge, y, font, color){
-    if(!draw) return;
-    ctx.font = font; ctx.fillStyle = color;
-    ctx.fillText(text, rightEdge - ctx.measureText(text).width, y);
+  function mw(text, font){ // measure width helper
+    if(!draw) return 0;
+    const prev=ctx.font; ctx.font=font; const w=ctx.measureText(text).width; ctx.font=prev; return w;
   }
 
-  if(draw){ ctx.textBaseline = 'alphabetic'; }
-
+  if(draw) ctx.textBaseline='alphabetic';
   let y = P + 18;
 
-  // Trip name
+  // ── Header ────────────────────────────────────────────
   txt(tripName, P, y, `700 24px ${SERIF}`, '#f0ede6');
   y += LINE_H * 1.15;
-
-  // Date + total
   txt(dateStr, P, y, `12px ${MONO}`, '#555');
   rAlign(money(total), W-P, y, `700 14px ${MONO}`, '#e8c97a');
   y += SEC_GAP;
+  solidLine(y); y += SEC_GAP * 0.65;
 
-  line(y); y += SEC_GAP * 0.65;
-
-  // ── Receipts with item breakdown ─────────────────────
-  receipts.forEach((r, ri) => {
-    // Receipt header
-    const rNameMax = W - P*2 - 90;
-    if(draw){
-      ctx.font = `700 13px ${MONO}`; ctx.fillStyle = '#f0ede6';
-      ctx.fillText(trunc(r.name, rNameMax), P, y);
-      rAlign(money(r.total), W-P, y, `700 13px ${MONO}`, '#e8c97a');
-    }
-    y += ITEM_LINE_H + 2;
-
-    // Paid-by subline
-    txt(`paid by ${r.paidBy}`, P+INDENT, y, `11px ${MONO}`, '#555');
-    y += ITEM_LINE_H - 2;
-
-    // Items
-    r.items.forEach(it => {
-      const who = Object.keys(it.shares).join(', ');
-      if(draw){
-        ctx.font = `12px ${MONO}`;
-        txt('·', P+INDENT, y, `12px ${MONO}`, '#8a8580');
-        const amtStr = money(it.price);
-        const amtW   = ctx.measureText(amtStr).width;
-        const nmMax  = W - P - INDENT - 14 - amtW - 10;
-        ctx.fillStyle = '#c8c4bc';
-        ctx.fillText(trunc(it.name, nmMax), P+INDENT+12, y);
-        rAlign(amtStr, W-P, y, `12px ${MONO}`, '#a09890');
+  // ── Build per-person data ─────────────────────────────
+  // personData[name] = { total, byReceipt: [{rIdx, rName, amt}] }
+  const personData = {};
+  people.forEach(p => { personData[p] = {total:0, byReceipt:[]}; });
+  receipts.forEach((r, rIdx) => {
+    people.forEach(p => {
+      const amt = r.shares[p] || 0;
+      if(amt > .001){
+        personData[p].total += amt;
+        personData[p].byReceipt.push({rIdx, rName:r.name, amt});
       }
-      y += ITEM_LINE_H - 3;
-      // Who line
-      txt(who, P+INDENT+12, y, `10px ${MONO}`, '#484440');
-      y += ITEM_LINE_H - 2;
+    });
+  });
+  // only include people who owe something
+  const activePeople = people.filter(p => personData[p].total > .001);
+
+  const isSimple = receipts.length <= SIMPLE_THRESHOLD;
+
+  if(isSimple){
+    // ── SIMPLE MODE: inline per-person ───────────────────
+    // PERSON NAME                 $XX.XX
+    //   Receipt A $12  ·  Receipt B $18
+    y = secHead('BREAKDOWN', y);
+
+    activePeople.forEach((p, pi) => {
+      const pd = personData[p];
+      // Name + total line
+      if(draw){
+        ctx.font = `700 13px ${MONO}`; ctx.fillStyle = '#f0ede6';
+        ctx.fillText(p, P, y);
+        rAlign(money(pd.total), W-P, y, `700 13px ${MONO}`, '#e8c97a');
+      }
+      y += 20;
+
+      // Inline receipt contributions
+      const parts = pd.byReceipt.map(b => `${b.rName}  ${money(b.amt)}`).join('   ·   ');
+      if(draw){
+        ctx.font = `11px ${MONO}`; ctx.fillStyle = '#666';
+        // wrap if too wide
+        const maxW = W - P*2;
+        if(ctx.measureText(parts).width <= maxW){
+          ctx.fillText(parts, P, y);
+          y += 18;
+        } else {
+          // split into two lines at midpoint
+          const mid = Math.ceil(pd.byReceipt.length/2);
+          const line1 = pd.byReceipt.slice(0,mid).map(b=>`${b.rName}  ${money(b.amt)}`).join('   ·   ');
+          const line2 = pd.byReceipt.slice(mid).map(b=>`${b.rName}  ${money(b.amt)}`).join('   ·   ');
+          ctx.fillText(line1, P, y); y += 17;
+          ctx.fillText(line2, P, y); y += 18;
+        }
+      } else {
+        // dry-run: estimate lines
+        y += pd.byReceipt.length > 3 ? 35 : 18;
+      }
+
+      // Thin separator between people (not after last)
+      if(pi < activePeople.length - 1){
+        if(draw){
+          ctx.strokeStyle='#222'; ctx.lineWidth=1; ctx.setLineDash([2,4]);
+          ctx.beginPath(); ctx.moveTo(P, y+2); ctx.lineTo(W-P, y+2); ctx.stroke();
+          ctx.setLineDash([]);
+        }
+        y += 12;
+      }
     });
 
-    // Extras (tax/tip/fee)
-    const extras = [];
-    if(r.tax>.001) extras.push(`Tax ${money(r.tax)}`);
-    if(r.tip>.001) extras.push(`Tip ${money(r.tip)}`);
-    if(r.fee>.001) extras.push(`${r.feeLabel||'Fee'} ${money(r.fee)}`);
-    if(extras.length){
-      txt(extras.join('  ·  '), P+INDENT+12, y, `11px ${MONO}`, '#484440');
-      y += ITEM_LINE_H;
+  } else {
+    // ── COMPLEX MODE: grid table with numbered legend ────
+    // Columns: name | ① | ② | … | TOTAL
+    // Rows: one per active person
+
+    const NUMS = ['①','②','③','④','⑤','⑥','⑦','⑧','⑨','⑩','⑪','⑫','⑬','⑭','⑮'];
+    const COL_FONT = `11px ${MONO}`;
+    const CELL_FONT = `12px ${MONO}`;
+    const HEAD_FONT = `700 10px ${MONO}`;
+
+    // Column widths: name col + one col per receipt + total col
+    const nCols   = receipts.length;
+    const available = W - P*2;
+    // Name col gets ~28% of space, total col ~14%, receipts share the rest
+    const nameColW  = Math.floor(available * 0.28);
+    const totalColW = Math.floor(available * 0.14);
+    const receiptColW = Math.floor((available - nameColW - totalColW) / nCols);
+
+    // Column x positions
+    const colX = [P + nameColW]; // first receipt col
+    for(let i=1; i<nCols; i++) colX.push(colX[0] + i*receiptColW);
+    const totalColX = colX[0] + nCols*receiptColW;
+
+    const ROW_H = 22;
+
+    // Header row: ① ② … TOTAL
+    y = secHead('BREAKDOWN', y);
+    if(draw){
+      ctx.font = HEAD_FONT; ctx.fillStyle = '#555';
+      receipts.forEach((_, ci) => {
+        const sym = NUMS[ci] || `${ci+1}`;
+        const x = colX[ci] + receiptColW/2 - ctx.measureText(sym).width/2;
+        ctx.fillText(sym, x, y);
+      });
+      ctx.font = HEAD_FONT; ctx.fillStyle = '#e8c97a';
+      const tw = ctx.measureText('TOTAL').width;
+      ctx.fillText('TOTAL', totalColX + totalColW - tw, y);
+    }
+    y += ROW_H;
+
+    // Thin header underline
+    if(draw){
+      ctx.strokeStyle='#333'; ctx.lineWidth=1; ctx.setLineDash([]);
+      ctx.beginPath(); ctx.moveTo(P+nameColW, y-6); ctx.lineTo(W-P, y-6); ctx.stroke();
     }
 
-    y += RECEIPT_GAP;
+    // Data rows
+    activePeople.forEach((p, pi) => {
+      const pd = personData[p];
+      if(draw){
+        // Name
+        ctx.font=CELL_FONT; ctx.fillStyle='#c8c4bc';
+        ctx.fillText(trunc(p, nameColW-8), P, y);
+        // Per-receipt amounts
+        receipts.forEach((_, ci) => {
+          const entry = pd.byReceipt.find(b=>b.rIdx===ci);
+          const cell = entry ? money(entry.amt) : '—';
+          ctx.font=CELL_FONT;
+          ctx.fillStyle = entry ? '#a09890' : '#333';
+          const cw = ctx.measureText(cell).width;
+          ctx.fillText(cell, colX[ci] + receiptColW/2 - cw/2, y);
+        });
+        // Total
+        ctx.font=`700 12px ${MONO}`; ctx.fillStyle='#e8c97a';
+        const tw = ctx.measureText(money(pd.total)).width;
+        ctx.fillText(money(pd.total), totalColX + totalColW - tw, y);
+      }
+      y += ROW_H;
 
-    // Dashed separator between receipts
-    if(ri < receipts.length - 1){
-      dashLine(y);
-      y += RECEIPT_GAP;
+      // Row separator
+      if(pi < activePeople.length-1){
+        if(draw){
+          ctx.strokeStyle='#222'; ctx.lineWidth=1; ctx.setLineDash([1,3]);
+          ctx.beginPath(); ctx.moveTo(P, y-4); ctx.lineTo(W-P, y-4); ctx.stroke();
+          ctx.setLineDash([]);
+        }
+      }
+    });
+
+    y += 8;
+
+    // ── Legend ─────────────────────────────────────────
+    solidLine(y); y += 10;
+    if(draw){
+      ctx.font=`700 9px ${MONO}`; ctx.fillStyle='#444';
+      ctx.fillText('RECEIPTS', P, y);
     }
-  });
-
-  y += SEC_GAP * 0.5;
-  line(y); y += SEC_GAP * 0.65;
+    y += 16;
+    receipts.forEach((r, ci) => {
+      const sym   = NUMS[ci] || `${ci+1}`;
+      const label = `${sym}  ${r.name}`;
+      txt(label, P, y, `11px ${MONO}`, '#555');
+      y += 17;
+    });
+  }
 
   // ── Settlements ──────────────────────────────────────
+  y += SEC_GAP * 0.5;
+  solidLine(y); y += SEC_GAP * 0.65;
   y = secHead('SETTLEMENTS', y);
   if(!settlements.length){
     txt('Everyone is settled ✓', P, y, `12px ${MONO}`, '#444');
@@ -2021,7 +2123,7 @@ function paint(ctx, W, P, MONO, SERIF, tripName, total, money, settlements, draw
     settlements.forEach(s => {
       const label = `${s.from} → ${s.to}`;
       if(draw){
-        ctx.font = `13px ${MONO}`; ctx.fillStyle = '#c8c4bc';
+        ctx.font=`13px ${MONO}`; ctx.fillStyle='#c8c4bc';
         ctx.fillText(trunc(label, W-P*2-90), P, y);
         rAlign(money(s.amount), W-P, y, `13px ${MONO}`, '#e8c97a');
       }
