@@ -103,6 +103,8 @@ textarea{resize:vertical;min-height:90px}
 /* ── BUILDER ── */
 .two-col{display:grid;grid-template-columns:1fr 1fr;gap:.7rem}
 @media(max-width:520px){.two-col{grid-template-columns:1fr}}
+@media(max-width:560px){.three-col-builder{grid-template-columns:1fr 1fr!important}}
+@media(max-width:380px){.three-col-builder{grid-template-columns:1fr!important}}
 .item-form{background:var(--surface2);border:1px solid var(--border);border-radius:3px;padding:1rem;margin-bottom:.9rem}
 .item-form-grid{display:grid;grid-template-columns:2fr 1fr;gap:.6rem}
 @media(max-width:460px){.item-form-grid{grid-template-columns:1fr}}
@@ -442,7 +444,7 @@ textarea{resize:vertical;min-height:90px}
   <!-- ② BUILD A RECEIPT -->
   <div class="card" id="builderCard">
     <div class="card-title" id="builderTitle">② Build a Receipt</div>
-    <div class="two-col" style="margin-bottom:.9rem">
+    <div class="three-col-builder" style="display:grid;grid-template-columns:2fr 1fr 1fr;gap:.7rem;margin-bottom:.9rem">
       <div>
         <label>Receipt name</label>
         <input id="rName" type="text" placeholder="e.g. Dinner at Nobu">
@@ -450,6 +452,10 @@ textarea{resize:vertical;min-height:90px}
       <div>
         <label>Paid by</label>
         <select id="rPaidBy"><option value="">— who paid? —</option></select>
+      </div>
+      <div>
+        <label>Date</label>
+        <input id="rDate" type="date">
       </div>
     </div>
     <!-- Photo attachment -->
@@ -1400,7 +1406,13 @@ function saveReceipt(){
   pendingItems.forEach(it=>Object.entries(it.shares).forEach(([p,v])=>{ if(p in personSubs) personSubs[p]+=v; }));
   const extrasTotal=tax+tip+fee, shares={};
   people.forEach(p=>{ const amt=personSubs[p]+(sub>0?extrasTotal*(personSubs[p]/sub):0); if(amt>.001) shares[p]=amt; });
-  const date=editingReceiptId?(receipts.find(r=>r.id===editingReceiptId)?.date||new Date().toLocaleDateString()):new Date().toLocaleDateString();
+  const dateInput = document.getElementById('rDate').value;
+  // Use entered date if provided, otherwise fall back to existing date (edit) or today (new)
+  const date = dateInput
+    ? new Date(dateInput + 'T12:00:00').toLocaleDateString()
+    : (editingReceiptId
+        ? (receipts.find(r=>r.id===editingReceiptId)?.date || new Date().toLocaleDateString())
+        : new Date().toLocaleDateString());
   // preserve existing photo if none newly attached
   const existingPhoto = editingReceiptId ? (receipts.find(r=>r.id===editingReceiptId)?.photo||null) : null;
   const receipt={id:editingReceiptId||Date.now(), name, paidBy, items:[...pendingItems], sub, tax, tip, fee, feeLabel, total, shares, date, photo: pendingPhoto||existingPhoto};
@@ -1415,6 +1427,8 @@ function resetBuilder(){
   pendingItems=[]; editingReceiptId=null; pendingPhoto=null;
   ['rName','rTaxPct','rTipPct','rTipFlat','rFeePct','rFeeLabel'].forEach(id=>document.getElementById(id).value='');
   document.getElementById('rPaidBy').value='';
+  // Default date to today
+  document.getElementById('rDate').value = new Date().toISOString().slice(0,10);
   document.getElementById('totalPreview').style.display='none';
   document.getElementById('builderTitle').textContent='② Build a Receipt';
   document.getElementById('saveBtn').textContent='Save Receipt →';
@@ -1539,6 +1553,11 @@ function editReceipt(id){
   document.getElementById('rName').value=r.name;
   const payerIdx=people.indexOf(r.paidBy);
   document.getElementById('rPaidBy').value=payerIdx>=0?payerIdx:'';
+  // Restore date: convert localeDateString back to yyyy-mm-dd for the input
+  try{
+    const d = new Date(r.date);
+    if(!isNaN(d)) document.getElementById('rDate').value = d.toISOString().slice(0,10);
+  } catch(e){ document.getElementById('rDate').value = new Date().toISOString().slice(0,10); }
   document.getElementById('rTaxPct').value=r.tax>0&&r.sub>0?(r.tax/r.sub*100).toFixed(3):'';
   document.getElementById('rTipFlat').value=r.tip>0?r.tip.toFixed(2):'';
   document.getElementById('rTipPct').value='';
@@ -1825,139 +1844,187 @@ function openSummaryCard(){
 
 function drawSummaryCard(){
   const canvas = document.getElementById('summaryCanvas');
-  const {balances, settlements} = calcBalances();
-  const total = receipts.reduce((s,r) => s+r.total, 0);
-  const sym   = currentTrip?.currency?.symbol || '$';
-  const rate  = currentTrip?.currency?.rate   || 1;
-  const money = v => sym + Math.abs(+v * rate).toFixed(2);
+  const { settlements } = calcBalances();
+  const total  = receipts.reduce((s,r) => s+r.total, 0);
+  const sym    = currentTrip?.currency?.symbol || '$';
+  const rate   = currentTrip?.currency?.rate   || 1;
+  const money  = v => sym + Math.abs(+v * rate).toFixed(2);
   const tripName = currentTrip?.tripName || 'Trip';
 
-  // ── Layout constants ──────────────────────────────────
-  const W = 480;
-  const PADDING = 28;
-  const LINE_H  = 26;
-  const SECTION_GAP = 18;
+  const MONO   = 'ui-monospace, "SF Mono", Menlo, monospace';
+  const SERIF  = 'Georgia, "Times New Roman", serif';
+  const W      = 560;
+  const PADDING = 32;
+  const ITEM_INDENT = 16; // indent for item rows inside a receipt
 
-  // ── Measure height needed ─────────────────────────────
-  const balanceLines = people.filter(p => Math.abs(balances[p]||0) > .005);
-  const settleLines  = settlements.length ? settlements : [];
-  const receiptLines = receipts;
+  // ── Pre-measure height ────────────────────────────────
+  // We need to know total height before drawing the background.
+  // Count logical line units:
+  //  header block: 2 lines + gap + divider
+  //  per receipt: receipt-header + N item lines + extras line (if any) + small gap + divider
+  //  settlements section: header + N lines
+  //  footer: 1 line
 
-  const totalLines =
-    1 +                          // trip name
-    1 +                          // date + total
-    SECTION_GAP/LINE_H +         // gap
-    1 +                          // "Receipts" header
-    receiptLines.length +
-    SECTION_GAP/LINE_H +
-    1 +                          // "Balances" header
-    Math.max(balanceLines.length, 1) +
-    SECTION_GAP/LINE_H +
-    1 +                          // "Settlements" header
-    Math.max(settleLines.length, 1) +
-    1;                           // footer
+  const LINE_H      = 24;
+  const ITEM_LINE_H = 21;
+  const SEC_GAP     = 18;
+  const RECEIPT_GAP = 10;
 
-  const H = Math.max(360, Math.round(totalLines * LINE_H + PADDING * 2.5 + 60));
-  canvas.width  = W;
-  canvas.height = H;
+  let estimatedH = PADDING + 18      // top padding + name
+    + LINE_H * 1.15                  // name
+    + LINE_H                         // date/total
+    + SEC_GAP                        // gap before divider
+    + SEC_GAP * 0.65;                // after divider
+
+  receipts.forEach(r => {
+    estimatedH += 22;                // receipt header ("RECEIPT NAME")
+    r.items.forEach(() => { estimatedH += ITEM_LINE_H; });
+    const hasExtras = r.tax>.001 || r.tip>.001 || r.fee>.001;
+    if(hasExtras) estimatedH += ITEM_LINE_H;
+    estimatedH += RECEIPT_GAP + 1;  // small gap + divider between receipts
+  });
+
+  estimatedH += SEC_GAP * 0.5 + SEC_GAP * 0.65; // gap before settlements
+  estimatedH += 22;                // SETTLEMENTS header
+  estimatedH += Math.max(settlements.length, 1) * LINE_H * 0.95;
+  estimatedH += 30;                // footer
+
+  const H = Math.max(400, Math.ceil(estimatedH));
+
+  // ── HiDPI setup ───────────────────────────────────────
+  const DPR = Math.min(window.devicePixelRatio || 2, 3);
+  canvas.width  = W * DPR;
+  canvas.height = H * DPR;
+  canvas.style.width   = W + 'px';
+  canvas.style.height  = H + 'px';
+  canvas.style.maxWidth = '100%';
 
   const ctx = canvas.getContext('2d');
+  ctx.imageSmoothingEnabled = true;
+  ctx.imageSmoothingQuality = 'high';
+  ctx.scale(DPR, DPR);
   ctx.clearRect(0, 0, W, H);
 
   // ── Background ────────────────────────────────────────
   ctx.fillStyle = '#161616';
-  roundRect(ctx, 0, 0, W, H, 10);
-  ctx.fill();
+  roundRect(ctx, 0, 0, W, H, 12); ctx.fill();
 
-  // subtle top accent bar
+  const grad = ctx.createLinearGradient(0, 0, 0, H);
+  grad.addColorStop(0, 'rgba(255,255,255,0.03)');
+  grad.addColorStop(1, 'rgba(0,0,0,0.12)');
+  ctx.fillStyle = grad;
+  roundRect(ctx, 0, 0, W, H, 12); ctx.fill();
+
   ctx.fillStyle = '#e8c97a';
-  roundRect(ctx, 0, 0, W, 4, 0);
-  ctx.fill();
+  ctx.fillRect(0, 0, W, 5);
 
-  let y = PADDING + 16;
+  let y = PADDING + 18;
 
   // ── Trip name ─────────────────────────────────────────
-  ctx.font = 'bold 22px Georgia, serif';
+  ctx.font = `700 24px ${SERIF}`;
   ctx.fillStyle = '#f0ede6';
+  ctx.textBaseline = 'alphabetic';
   ctx.fillText(tripName, PADDING, y);
-  y += LINE_H * 1.1;
+  y += LINE_H * 1.15;
 
   // ── Date + total ──────────────────────────────────────
-  ctx.font = '11px monospace';
-  ctx.fillStyle = '#666';
+  ctx.font = `12px ${MONO}`;
+  ctx.fillStyle = '#555';
   const dateStr = currentTrip?.createdAt || new Date().toLocaleDateString();
   ctx.fillText(dateStr, PADDING, y);
+  ctx.font = `700 14px ${MONO}`;
   ctx.fillStyle = '#e8c97a';
-  ctx.font = 'bold 13px monospace';
   const totalStr = money(total);
   const totalW = ctx.measureText(totalStr).width;
   ctx.fillText(totalStr, W - PADDING - totalW, y);
-  y += SECTION_GAP;
+  y += SEC_GAP;
 
   // divider
-  ctx.strokeStyle = '#2a2a2a';
-  ctx.lineWidth = 1;
-  ctx.beginPath(); ctx.moveTo(PADDING, y); ctx.lineTo(W-PADDING, y); ctx.stroke();
-  y += SECTION_GAP * 0.6;
+  divider(ctx, PADDING, y, W); y += SEC_GAP * 0.65;
 
-  // ── Receipts section ──────────────────────────────────
-  y = sectionHeader(ctx, 'RECEIPTS', PADDING, y, W);
-  receipts.forEach(r => {
-    ctx.font = '12px monospace';
-    ctx.fillStyle = '#c8c4bc';
-    const nameMax = W - PADDING*2 - 80;
-    ctx.fillText(truncate(ctx, r.name, nameMax), PADDING, y);
+  // ── Per-receipt item breakdowns ───────────────────────
+  receipts.forEach((r, ri) => {
+    // Receipt name header row
+    ctx.font = `700 13px ${MONO}`;
+    ctx.fillStyle = '#f0ede6';
+    const rNameMax = W - PADDING*2 - 90;
+    ctx.fillText(truncate(ctx, r.name, rNameMax), PADDING, y);
     ctx.fillStyle = '#e8c97a';
-    ctx.font = '12px monospace';
-    const rw = ctx.measureText(money(r.total)).width;
-    ctx.fillText(money(r.total), W - PADDING - rw, y);
-    y += LINE_H * 0.95;
+    const rtw = ctx.measureText(money(r.total)).width;
+    ctx.fillText(money(r.total), W - PADDING - rtw, y);
+    y += ITEM_LINE_H + 2;
+
+    // Paid by line
+    ctx.font = `11px ${MONO}`;
+    ctx.fillStyle = '#555';
+    ctx.fillText(`paid by ${r.paidBy}`, PADDING + ITEM_INDENT, y);
+    y += ITEM_LINE_H - 2;
+
+    // Item lines
+    r.items.forEach(it => {
+      const who = Object.keys(it.shares).join(', ');
+      ctx.font = `12px ${MONO}`;
+      ctx.fillStyle = '#8a8580';
+
+      // bullet
+      ctx.fillText('·', PADDING + ITEM_INDENT, y);
+
+      // item name (truncated)
+      const itemAmtStr = money(it.price);
+      const amtW = ctx.measureText(itemAmtStr).width;
+      const nameMax = W - PADDING - ITEM_INDENT - 14 - amtW - 10;
+      ctx.fillStyle = '#c8c4bc';
+      ctx.fillText(truncate(ctx, it.name, nameMax), PADDING + ITEM_INDENT + 12, y);
+
+      // amount right-aligned
+      ctx.fillStyle = '#a09890';
+      ctx.fillText(itemAmtStr, W - PADDING - amtW, y);
+
+      // who row
+      y += ITEM_LINE_H - 3;
+      ctx.font = `10px ${MONO}`;
+      ctx.fillStyle = '#484440';
+      ctx.fillText(truncate(ctx, who, W - PADDING*2 - ITEM_INDENT - 10), PADDING + ITEM_INDENT + 12, y);
+      y += ITEM_LINE_H - 2;
+    });
+
+    // Tax / tip / fee extras line
+    const extras = [];
+    if(r.tax>.001) extras.push(`Tax ${money(r.tax)}`);
+    if(r.tip>.001) extras.push(`Tip ${money(r.tip)}`);
+    if(r.fee>.001) extras.push(`${r.feeLabel||'Fee'} ${money(r.fee)}`);
+    if(extras.length){
+      ctx.font = `11px ${MONO}`;
+      ctx.fillStyle = '#484440';
+      ctx.fillText(extras.join('  ·  '), PADDING + ITEM_INDENT + 12, y);
+      y += ITEM_LINE_H;
+    }
+
+    y += RECEIPT_GAP;
+
+    // Light divider between receipts (skip after last one)
+    if(ri < receipts.length - 1){
+      ctx.strokeStyle = '#222'; ctx.lineWidth = 1;
+      ctx.setLineDash([3, 4]);
+      ctx.beginPath(); ctx.moveTo(PADDING + ITEM_INDENT, y); ctx.lineTo(W - PADDING, y); ctx.stroke();
+      ctx.setLineDash([]);
+      y += RECEIPT_GAP;
+    }
   });
-  y += SECTION_GAP * 0.5;
 
-  // divider
-  ctx.strokeStyle = '#2a2a2a'; ctx.lineWidth = 1;
-  ctx.beginPath(); ctx.moveTo(PADDING, y); ctx.lineTo(W-PADDING, y); ctx.stroke();
-  y += SECTION_GAP * 0.6;
+  y += SEC_GAP * 0.5;
+  divider(ctx, PADDING, y, W); y += SEC_GAP * 0.65;
 
-  // ── Balances section ──────────────────────────────────
-  y = sectionHeader(ctx, 'BALANCES', PADDING, y, W);
-  if(!balanceLines.length){
-    ctx.font = '11px monospace'; ctx.fillStyle = '#555';
+  // ── Settlements ───────────────────────────────────────
+  y = sectionHeader(ctx, 'SETTLEMENTS', PADDING, y);
+  if(!settlements.length){
+    ctx.font = `12px ${MONO}`; ctx.fillStyle = '#444';
     ctx.fillText('Everyone is settled ✓', PADDING, y);
     y += LINE_H;
   } else {
-    balanceLines.forEach(p => {
-      const v = balances[p] || 0;
-      ctx.font = '12px monospace';
-      ctx.fillStyle = '#c8c4bc';
-      ctx.fillText(p, PADDING, y);
-      const isOwed = v > .005;
-      ctx.fillStyle = isOwed ? '#7ac9a0' : '#c97a7a';
-      const label = isOwed ? `is owed ${money(v)}` : `owes ${money(-v)}`;
-      const lw = ctx.measureText(label).width;
-      ctx.fillText(label, W - PADDING - lw, y);
-      y += LINE_H * 0.95;
-    });
-  }
-  y += SECTION_GAP * 0.5;
-
-  // divider
-  ctx.strokeStyle = '#2a2a2a'; ctx.lineWidth = 1;
-  ctx.beginPath(); ctx.moveTo(PADDING, y); ctx.lineTo(W-PADDING, y); ctx.stroke();
-  y += SECTION_GAP * 0.6;
-
-  // ── Settlements section ───────────────────────────────
-  y = sectionHeader(ctx, 'SETTLEMENTS', PADDING, y, W);
-  if(!settleLines.length){
-    ctx.font = '11px monospace'; ctx.fillStyle = '#555';
-    ctx.fillText('Nothing to settle', PADDING, y);
-    y += LINE_H;
-  } else {
-    settleLines.forEach(s => {
-      ctx.font = '12px monospace';
-      ctx.fillStyle = '#c8c4bc';
-      ctx.fillText(`${s.from} → ${s.to}`, PADDING, y);
+    settlements.forEach(s => {
+      ctx.font = `13px ${MONO}`; ctx.fillStyle = '#c8c4bc';
+      ctx.fillText(truncate(ctx, `${s.from} → ${s.to}`, W - PADDING*2 - 90), PADDING, y);
       ctx.fillStyle = '#e8c97a';
       const sw = ctx.measureText(money(s.amount)).width;
       ctx.fillText(money(s.amount), W - PADDING - sw, y);
@@ -1966,18 +2033,23 @@ function drawSummaryCard(){
   }
 
   // ── Footer ────────────────────────────────────────────
-  ctx.font = '10px monospace';
-  ctx.fillStyle = '#333';
-  const footerTxt = 'Trip Splitter';
-  const fw = ctx.measureText(footerTxt).width;
-  ctx.fillText(footerTxt, (W - fw) / 2, H - 12);
+  ctx.font = `11px ${MONO}`; ctx.fillStyle = '#2e2e2e';
+  const fw = ctx.measureText('Trip Splitter').width;
+  ctx.fillText('Trip Splitter', (W - fw) / 2, H - 14);
 }
 
-function sectionHeader(ctx, text, x, y, W){
-  ctx.font = 'bold 10px monospace';
-  ctx.fillStyle = '#555';
+function divider(ctx, x, y, W){
+  ctx.strokeStyle = '#2a2a2a'; ctx.lineWidth = 1; ctx.setLineDash([]);
+  ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(W - x, y); ctx.stroke();
+}
+
+function sectionHeader(ctx, text, x, y){
+  ctx.font = '700 10px ui-monospace, "SF Mono", Menlo, monospace';
+  ctx.fillStyle = '#444';
+  ctx.letterSpacing = '0.1em';
   ctx.fillText(text, x, y);
-  return y + 20;
+  ctx.letterSpacing = '0';
+  return y + 22;
 }
 function truncate(ctx, text, maxW){
   if(ctx.measureText(text).width <= maxW) return text;
