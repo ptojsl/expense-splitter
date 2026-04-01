@@ -710,22 +710,58 @@ function persistCurrent(){
 // TRIP LIST VIEW
 // ═══════════════════════════════════════════════════════
 function renderTripList(){
-  const trips=getTrips();
-  // sort: open trips first, settled last
-  const sorted=[...trips].sort((a,b)=>(a.settled?1:0)-(b.settled?1:0));
-  const grid=document.getElementById('tripGrid');
-  const tiles=sorted.map(t=>{
-    const total=t.receipts.reduce((s,r)=>s+r.total,0);
-    const statusBadge=t.settled
+  const allTrips = getTrips();
+
+  // Show search bar only when there are enough trips to warrant it
+  const searchRow = document.getElementById('searchRow');
+  searchRow.style.display = allTrips.length >= 4 ? 'flex' : 'none';
+
+  // Filter by search query
+  const query = (document.getElementById('tripSearch')?.value || '').toLowerCase().trim();
+  const filtered = query
+    ? allTrips.filter(t =>
+        t.tripName.toLowerCase().includes(query) ||
+        t.people.some(p => p.toLowerCase().includes(query))
+      )
+    : allTrips;
+
+  // Sort
+  const sortBy = document.getElementById('tripSort')?.value || 'date';
+  const sorted = [...filtered].sort((a, b) => {
+    if(sortBy === 'name')  return a.tripName.localeCompare(b.tripName);
+    if(sortBy === 'total') return b.receipts.reduce((s,r)=>s+r.total,0) - a.receipts.reduce((s,r)=>s+r.total,0);
+    // default: date descending, open before settled
+    const settle = (a.settled?1:0) - (b.settled?1:0);
+    if(settle !== 0) return settle;
+    return b.id - a.id;
+  });
+
+  const grid = document.getElementById('tripGrid');
+  if(query && !sorted.length){
+    grid.innerHTML = `<div class="empty" style="grid-column:1/-1">No trips match "${he(query)}"</div>
+      <div class="trip-tile new-trip-tile" onclick="openNewTripModal()"><span style="font-size:1.3rem">＋</span> New Trip</div>`;
+    return;
+  }
+
+  const tiles = sorted.map(t => {
+    const total = t.receipts.reduce((s,r) => s+r.total, 0);
+    // In the list view currentTrip is null, so use raw $ amounts
+    const totalStr = '$' + total.toFixed(2);
+    const statusBadge = t.settled
       ? `<span class="tt-status settled">Settled ✓</span>`
       : `<span class="tt-status open">Open</span>`;
+    // Highlight matching query in name
+    const displayName = query
+      ? he(t.tripName).replace(new RegExp(`(${he(query)})`, 'gi'), '<mark style="background:var(--accent);color:#0d0d0d;border-radius:1px">$1</mark>')
+      : he(t.tripName);
     return `<div class="trip-tile${t.settled?' settled':''}" onclick="openTrip(${t.id})">
       <button class="tt-del" onclick="event.stopPropagation();deleteTripConfirm(${t.id})" title="Delete trip">×</button>
-      <div class="tt-name">${he(t.tripName)} ${statusBadge}</div>
+      <div class="tt-name">${displayName} ${statusBadge}</div>
       <div class="tt-meta">${t.people.length} people · ${t.receipts.length} receipt${t.receipts.length!==1?'s':''} · ${t.createdAt}</div>
-      ${total>0?`<div class="tt-total">${fmt(total)} total</div>`:''}
+      ${total>0?`<div class="tt-total">${totalStr} total</div>`:''}
     </div>`;
   }).join('');
+
   grid.innerHTML = tiles +
     `<div class="trip-tile new-trip-tile" onclick="openNewTripModal()">
        <span style="font-size:1.3rem">＋</span> New Trip
@@ -1776,6 +1812,209 @@ function clearCurrentTrip(){
   if(!confirm('Clear all people and receipts for this trip?')) return;
   people=[]; receipts=[]; persist(); resetBuilder(); renderPeople(); renderPaidBy(); renderItemSplitUI(); renderAll();
   toast('Trip data cleared');
+}
+
+// ═══════════════════════════════════════════════════════
+// SUMMARY CARD  (canvas-based shareable image)
+// ═══════════════════════════════════════════════════════
+function openSummaryCard(){
+  if(!receipts.length){ toast('Add receipts first'); return; }
+  drawSummaryCard();
+  document.getElementById('summaryCardModal').style.display='flex';
+}
+
+function drawSummaryCard(){
+  const canvas = document.getElementById('summaryCanvas');
+  const {balances, settlements} = calcBalances();
+  const total = receipts.reduce((s,r) => s+r.total, 0);
+  const sym   = currentTrip?.currency?.symbol || '$';
+  const rate  = currentTrip?.currency?.rate   || 1;
+  const money = v => sym + Math.abs(+v * rate).toFixed(2);
+  const tripName = currentTrip?.tripName || 'Trip';
+
+  // ── Layout constants ──────────────────────────────────
+  const W = 480;
+  const PADDING = 28;
+  const LINE_H  = 26;
+  const SECTION_GAP = 18;
+
+  // ── Measure height needed ─────────────────────────────
+  const balanceLines = people.filter(p => Math.abs(balances[p]||0) > .005);
+  const settleLines  = settlements.length ? settlements : [];
+  const receiptLines = receipts;
+
+  const totalLines =
+    1 +                          // trip name
+    1 +                          // date + total
+    SECTION_GAP/LINE_H +         // gap
+    1 +                          // "Receipts" header
+    receiptLines.length +
+    SECTION_GAP/LINE_H +
+    1 +                          // "Balances" header
+    Math.max(balanceLines.length, 1) +
+    SECTION_GAP/LINE_H +
+    1 +                          // "Settlements" header
+    Math.max(settleLines.length, 1) +
+    1;                           // footer
+
+  const H = Math.max(360, Math.round(totalLines * LINE_H + PADDING * 2.5 + 60));
+  canvas.width  = W;
+  canvas.height = H;
+
+  const ctx = canvas.getContext('2d');
+  ctx.clearRect(0, 0, W, H);
+
+  // ── Background ────────────────────────────────────────
+  ctx.fillStyle = '#161616';
+  roundRect(ctx, 0, 0, W, H, 10);
+  ctx.fill();
+
+  // subtle top accent bar
+  ctx.fillStyle = '#e8c97a';
+  roundRect(ctx, 0, 0, W, 4, 0);
+  ctx.fill();
+
+  let y = PADDING + 16;
+
+  // ── Trip name ─────────────────────────────────────────
+  ctx.font = 'bold 22px Georgia, serif';
+  ctx.fillStyle = '#f0ede6';
+  ctx.fillText(tripName, PADDING, y);
+  y += LINE_H * 1.1;
+
+  // ── Date + total ──────────────────────────────────────
+  ctx.font = '11px monospace';
+  ctx.fillStyle = '#666';
+  const dateStr = currentTrip?.createdAt || new Date().toLocaleDateString();
+  ctx.fillText(dateStr, PADDING, y);
+  ctx.fillStyle = '#e8c97a';
+  ctx.font = 'bold 13px monospace';
+  const totalStr = money(total);
+  const totalW = ctx.measureText(totalStr).width;
+  ctx.fillText(totalStr, W - PADDING - totalW, y);
+  y += SECTION_GAP;
+
+  // divider
+  ctx.strokeStyle = '#2a2a2a';
+  ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.moveTo(PADDING, y); ctx.lineTo(W-PADDING, y); ctx.stroke();
+  y += SECTION_GAP * 0.6;
+
+  // ── Receipts section ──────────────────────────────────
+  y = sectionHeader(ctx, 'RECEIPTS', PADDING, y, W);
+  receipts.forEach(r => {
+    ctx.font = '12px monospace';
+    ctx.fillStyle = '#c8c4bc';
+    const nameMax = W - PADDING*2 - 80;
+    ctx.fillText(truncate(ctx, r.name, nameMax), PADDING, y);
+    ctx.fillStyle = '#e8c97a';
+    ctx.font = '12px monospace';
+    const rw = ctx.measureText(money(r.total)).width;
+    ctx.fillText(money(r.total), W - PADDING - rw, y);
+    y += LINE_H * 0.95;
+  });
+  y += SECTION_GAP * 0.5;
+
+  // divider
+  ctx.strokeStyle = '#2a2a2a'; ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.moveTo(PADDING, y); ctx.lineTo(W-PADDING, y); ctx.stroke();
+  y += SECTION_GAP * 0.6;
+
+  // ── Balances section ──────────────────────────────────
+  y = sectionHeader(ctx, 'BALANCES', PADDING, y, W);
+  if(!balanceLines.length){
+    ctx.font = '11px monospace'; ctx.fillStyle = '#555';
+    ctx.fillText('Everyone is settled ✓', PADDING, y);
+    y += LINE_H;
+  } else {
+    balanceLines.forEach(p => {
+      const v = balances[p] || 0;
+      ctx.font = '12px monospace';
+      ctx.fillStyle = '#c8c4bc';
+      ctx.fillText(p, PADDING, y);
+      const isOwed = v > .005;
+      ctx.fillStyle = isOwed ? '#7ac9a0' : '#c97a7a';
+      const label = isOwed ? `is owed ${money(v)}` : `owes ${money(-v)}`;
+      const lw = ctx.measureText(label).width;
+      ctx.fillText(label, W - PADDING - lw, y);
+      y += LINE_H * 0.95;
+    });
+  }
+  y += SECTION_GAP * 0.5;
+
+  // divider
+  ctx.strokeStyle = '#2a2a2a'; ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.moveTo(PADDING, y); ctx.lineTo(W-PADDING, y); ctx.stroke();
+  y += SECTION_GAP * 0.6;
+
+  // ── Settlements section ───────────────────────────────
+  y = sectionHeader(ctx, 'SETTLEMENTS', PADDING, y, W);
+  if(!settleLines.length){
+    ctx.font = '11px monospace'; ctx.fillStyle = '#555';
+    ctx.fillText('Nothing to settle', PADDING, y);
+    y += LINE_H;
+  } else {
+    settleLines.forEach(s => {
+      ctx.font = '12px monospace';
+      ctx.fillStyle = '#c8c4bc';
+      ctx.fillText(`${s.from} → ${s.to}`, PADDING, y);
+      ctx.fillStyle = '#e8c97a';
+      const sw = ctx.measureText(money(s.amount)).width;
+      ctx.fillText(money(s.amount), W - PADDING - sw, y);
+      y += LINE_H * 0.95;
+    });
+  }
+
+  // ── Footer ────────────────────────────────────────────
+  ctx.font = '10px monospace';
+  ctx.fillStyle = '#333';
+  const footerTxt = 'Trip Splitter';
+  const fw = ctx.measureText(footerTxt).width;
+  ctx.fillText(footerTxt, (W - fw) / 2, H - 12);
+}
+
+function sectionHeader(ctx, text, x, y, W){
+  ctx.font = 'bold 10px monospace';
+  ctx.fillStyle = '#555';
+  ctx.fillText(text, x, y);
+  return y + 20;
+}
+function truncate(ctx, text, maxW){
+  if(ctx.measureText(text).width <= maxW) return text;
+  while(text.length > 1 && ctx.measureText(text + '…').width > maxW) text = text.slice(0,-1);
+  return text + '…';
+}
+function roundRect(ctx, x, y, w, h, r){
+  ctx.beginPath();
+  ctx.moveTo(x+r, y);
+  ctx.lineTo(x+w-r, y); ctx.arcTo(x+w, y, x+w, y+r, r);
+  ctx.lineTo(x+w, y+h-r); ctx.arcTo(x+w, y+h, x+w-r, y+h, r);
+  ctx.lineTo(x+r, y+h); ctx.arcTo(x, y+h, x, y+h-r, r);
+  ctx.lineTo(x, y+r); ctx.arcTo(x, y, x+r, y, r);
+  ctx.closePath();
+}
+
+function downloadSummaryCard(){
+  const canvas = document.getElementById('summaryCanvas');
+  const a = document.createElement('a');
+  a.download = `${(currentTrip?.tripName||'trip').replace(/\s+/g,'-')}-summary.png`;
+  a.href = canvas.toDataURL('image/png');
+  a.click();
+  toast('Image downloaded!');
+}
+
+async function copySummaryCard(){
+  const canvas = document.getElementById('summaryCanvas');
+  try{
+    canvas.toBlob(async blob => {
+      await navigator.clipboard.write([new ClipboardItem({'image/png': blob})]);
+      toast('Image copied!');
+    });
+  } catch(e){
+    // Fallback: just download if clipboard API not available
+    downloadSummaryCard();
+    toast('Copied not supported — image downloaded instead');
+  }
 }
 
 // ═══════════════════════════════════════════════════════
