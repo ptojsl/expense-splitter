@@ -2,9 +2,33 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <title>Trip Splitter</title>
+<meta name="description" content="Split restaurant bills with friends. Track receipts, add items, handle tax & tip, and settle up with one tap.">
+<meta name="theme-color" content="#0d0d0d">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Trip Splitter">
+
+<!-- Open Graph — makes link previews look good in iMessage, WhatsApp, Slack etc -->
+<meta property="og:type"        content="website">
+<meta property="og:title"       content="Trip Splitter">
+<meta property="og:description" content="Split restaurant bills with friends. Track receipts by item, handle tax & tip, and settle up instantly.">
+<meta property="og:image"       content="https://og-image-service.vercel.app/Trip%20Splitter.png">
+
+<!-- Twitter card -->
+<meta name="twitter:card"        content="summary">
+<meta name="twitter:title"       content="Trip Splitter">
+<meta name="twitter:description" content="Split bills with friends — item by item.">
+
+<!-- PWA manifest (inline so no extra file needed on GitHub Pages) -->
+<link rel="manifest" href="data:application/json;charset=utf-8,%7B%22name%22%3A%22Trip%20Splitter%22%2C%22short_name%22%3A%22Splitter%22%2C%22description%22%3A%22Split%20restaurant%20bills%20with%20friends%22%2C%22start_url%22%3A%22.%2F%22%2C%22display%22%3A%22standalone%22%2C%22background_color%22%3A%22%230d0d0d%22%2C%22theme_color%22%3A%22%230d0d0d%22%2C%22icons%22%3A%5B%7B%22src%22%3A%22https%3A%2F%2Fplacehold.co%2F192x192%2Fe8c97a%2F0d0d0d%3Ftext%3DSplit%22%2C%22sizes%22%3A%22192x192%22%2C%22type%22%3A%22image%2Fpng%22%7D%5D%7D">
+
+<!-- Fonts: preconnect first, then load with display=swap so text is never invisible -->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;700;900&family=DM+Mono:wght@300;400;500&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/lz-string/1.5.0/lz-string.min.js"></script>
 <style>
 :root{
   --bg:#0d0d0d;--surface:#161616;--surface2:#1f1f1f;--surface3:#252525;
@@ -61,6 +85,8 @@ textarea{resize:vertical;min-height:90px}
 .trip-tile .tt-del{position:absolute;top:.6rem;right:.6rem;background:none;border:none;
   color:var(--accent2);cursor:pointer;font-size:1.1rem;padding:0;line-height:1;opacity:0;transition:opacity .15s}
 .trip-tile:hover .tt-del{opacity:1}
+/* Fix 2: always visible on touch screens where hover doesn't exist */
+@media(hover:none){.trip-tile .tt-del{opacity:.6}}
 .new-trip-tile{border-style:dashed;display:flex;align-items:center;justify-content:center;
   gap:.5rem;font-size:.8rem;color:var(--muted);min-height:90px}
 .new-trip-tile:hover{color:var(--accent);border-color:var(--accent)}
@@ -110,7 +136,9 @@ textarea{resize:vertical;min-height:90px}
 .item-row .item-price{font-size:.92rem;color:var(--accent)}
 .item-rm{background:none;border:none;cursor:pointer;font-size:1rem;padding:0;line-height:1}
 .taxtip-grid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:.6rem}
-@media(max-width:500px){.taxtip-grid{grid-template-columns:1fr 1fr}}
+/* fee % and fee label always sit together on their own row */
+.taxtip-grid .fee-row{grid-column:1/-1;display:grid;grid-template-columns:1fr 2fr;gap:.6rem}
+@media(max-width:500px){.taxtip-grid{grid-template-columns:1fr 1fr}.taxtip-grid .fee-row{grid-template-columns:1fr 1fr}}
 .total-preview{display:flex;justify-content:space-between;align-items:center;
   background:var(--surface2);border:1px solid var(--accent);border-radius:3px;
   padding:.55rem .85rem;margin-top:.6rem;font-size:.83rem}
@@ -155,13 +183,76 @@ textarea{resize:vertical;min-height:90px}
 .breakdown-person .bp-total{display:flex;justify-content:space-between;font-size:.82rem;font-weight:500;margin-top:.5rem;padding-top:.4rem;border-top:1px solid var(--border)}
 .breakdown-person .bp-total span:last-child{color:var(--accent)}
 
-/* ── MISC ── */
+/* ── WELCOME OVERLAY (first-time visitors) ── */
+.welcome-bg{position:fixed;inset:0;background:rgba(0,0,0,.88);z-index:400;
+  display:flex;align-items:center;justify-content:center;padding:1rem}
+.welcome-box{background:var(--surface);border:1px solid var(--border);border-radius:6px;
+  padding:2rem;width:100%;max-width:460px;text-align:center}
+.welcome-box .w-icon{font-size:2.8rem;margin-bottom:.8rem}
+.welcome-box h2{font-family:'Playfair Display',serif;font-size:1.6rem;font-weight:900;
+  margin-bottom:.5rem;letter-spacing:-.5px}
+.welcome-box h2 span{color:var(--accent)}
+.welcome-box p{font-size:.8rem;color:var(--muted);line-height:1.65;margin-bottom:1.2rem}
+.welcome-steps{display:flex;flex-direction:column;gap:.5rem;margin-bottom:1.4rem;text-align:left}
+.welcome-step{display:flex;align-items:flex-start;gap:.7rem;background:var(--surface2);
+  border:1px solid var(--border);border-radius:3px;padding:.6rem .8rem;font-size:.75rem}
+.welcome-step .ws-num{color:var(--accent);font-weight:700;font-size:.85rem;flex-shrink:0;margin-top:.05rem}
+.welcome-step .ws-text{color:var(--text);line-height:1.45}
+.welcome-step .ws-text strong{color:var(--accent)}
+
+/* ── INSTALL BANNER ── */
+.install-banner{position:fixed;bottom:0;left:0;right:0;z-index:150;
+  background:var(--surface);border-top:1px solid var(--border);
+  padding:.75rem 1rem;display:flex;align-items:center;justify-content:space-between;gap:.8rem;
+  font-size:.75rem;transform:translateY(100%);transition:transform .3s ease}
+.install-banner.show{transform:translateY(0)}
+.install-banner .ib-text{color:var(--muted);flex:1}
+.install-banner .ib-text strong{color:var(--text);display:block;margin-bottom:.1rem}
+.install-banner .ib-actions{display:flex;gap:.4rem;flex-shrink:0}
+
+/* ── SEARCH ── */
+.search-row{display:flex;gap:.6rem;margin-bottom:1.2rem;align-items:center;flex-wrap:wrap}
+.search-row input{flex:1;min-width:140px;background:var(--surface);border:1px solid var(--border)}
+.sort-select{background:var(--surface);border:1px solid var(--border);border-radius:3px;
+  color:var(--muted);font-family:'DM Mono',monospace;font-size:.72rem;padding:.52rem .6rem;
+  cursor:pointer;width:auto;flex-shrink:0}
+
+/* ── CURRENCY PANEL ── */
+.currency-toggle{font-size:.68rem;color:var(--muted);cursor:pointer;background:none;border:none;
+  font-family:'DM Mono',monospace;text-decoration:underline;text-decoration-style:dotted;
+  text-underline-offset:3px;padding:0}
+.currency-toggle:hover{color:var(--accent)}
+.currency-panel{background:var(--surface2);border:1px solid var(--border);border-radius:3px;
+  padding:.8rem 1rem;margin-top:.6rem;display:none}
+.currency-panel.open{display:block}
+.currency-row{display:grid;grid-template-columns:1fr 1fr 1fr;gap:.6rem;align-items:end}
+@media(max-width:480px){.currency-row{grid-template-columns:1fr 1fr}}
+
+/* ── SUMMARY CARD MODAL ── */
+.summary-card-wrap{text-align:center}
+#summaryCanvas{border-radius:6px;max-width:100%;cursor:pointer}
+.summary-card-actions{display:flex;gap:.5rem;justify-content:center;margin-top:1rem;flex-wrap:wrap}
+
 .empty{color:var(--muted);font-size:.78rem;text-align:center;padding:1.4rem}
 .warn-box{background:#1e1210;border:1px solid var(--accent2);border-radius:3px;padding:.5rem .7rem;font-size:.72rem;color:var(--accent2);margin-bottom:.7rem}
 .export-row{display:flex;gap:.5rem;flex-wrap:wrap}
 .section-label{font-size:.65rem;text-transform:uppercase;letter-spacing:.12em;color:var(--muted);margin-bottom:.6rem;padding-bottom:.4rem;border-bottom:1px solid var(--border)}
+
+/* ── TOAST (regular) ── */
 .toast{position:fixed;bottom:1.4rem;left:50%;transform:translateX(-50%) translateY(6px);background:var(--green);color:#0d0d0d;padding:.5rem 1.1rem;border-radius:3px;font-size:.74rem;font-weight:500;opacity:0;transition:opacity .2s,transform .2s;pointer-events:none;z-index:200;text-transform:uppercase;letter-spacing:.07em}
 .toast.on{opacity:1;transform:translateX(-50%) translateY(0)}
+
+/* ── UNDO TOAST ── */
+.undo-toast{position:fixed;bottom:1.4rem;left:50%;transform:translateX(-50%) translateY(6px);
+  background:var(--surface);border:1px solid var(--border);border-radius:3px;
+  display:flex;align-items:center;gap:.8rem;padding:.5rem .5rem .5rem 1rem;
+  font-size:.74rem;opacity:0;transition:opacity .2s,transform .2s;pointer-events:none;z-index:201}
+.undo-toast.on{opacity:1;transform:translateX(-50%) translateY(0);pointer-events:auto}
+.undo-toast .undo-msg{color:var(--muted)}
+.undo-toast .undo-btn{background:var(--accent);color:#0d0d0d;border:none;border-radius:2px;
+  font-family:'DM Mono',monospace;font-size:.68rem;font-weight:500;padding:.32rem .7rem;
+  cursor:pointer;text-transform:uppercase;letter-spacing:.06em;white-space:nowrap}
+.undo-toast .undo-close{background:none;border:none;color:var(--muted);cursor:pointer;font-size:1rem;padding:0 .2rem;line-height:1}
 
 /* ── MODAL ── */
 .modal-bg{position:fixed;inset:0;background:rgba(0,0,0,.75);z-index:300;display:flex;align-items:center;justify-content:center;padding:1rem}
@@ -171,11 +262,102 @@ textarea{resize:vertical;min-height:90px}
 .import-tabs{display:flex;gap:.4rem;margin-bottom:.9rem}
 .itab{flex:1;background:var(--surface2);border:1px solid var(--border);border-radius:3px;color:var(--muted);font-family:'DM Mono',monospace;font-size:.7rem;padding:.4rem;cursor:pointer;text-transform:uppercase;transition:all .15s}
 .itab.on{background:#1e1b12;border-color:var(--accent);color:var(--accent)}
+
+/* ── TRIP STATUS ── */
+.trip-tile.settled{opacity:.75}
+.trip-tile.settled .tt-name{color:var(--muted)}
+.tt-status{display:inline-block;font-size:.6rem;text-transform:uppercase;letter-spacing:.08em;
+  padding:.15rem .4rem;border-radius:2px;margin-left:.4rem;vertical-align:middle;font-weight:500}
+.tt-status.open{background:#12201a;color:var(--green);border:1px solid #1e3d2a}
+.tt-status.settled{background:#1a1a12;color:var(--muted);border:1px solid var(--border)}
+.status-toggle{display:flex;align-items:center;gap:.6rem;margin-top:.3rem}
+.status-badge{font-size:.68rem;padding:.2rem .55rem;border-radius:2px;font-weight:500}
+.status-badge.open{background:#12201a;color:var(--green);border:1px solid #1e3d2a}
+.status-badge.settled{background:#1a1a12;color:var(--muted);border:1px solid var(--border)}
+
+/* ── GROUP PRESETS ── */
+.group-list{display:flex;flex-direction:column;gap:.5rem;margin-top:.6rem}
+.group-item{display:flex;align-items:center;justify-content:space-between;
+  background:var(--surface2);border:1px solid var(--border);border-radius:3px;padding:.55rem .8rem;gap:.5rem}
+.group-item .gi-name{font-size:.82rem;font-weight:500;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.group-item .gi-people{font-size:.68rem;color:var(--muted)}
+.group-item .gi-actions{display:flex;gap:.3rem;flex-shrink:0}
+.group-item .gi-btn{background:none;border:1px solid var(--border);border-radius:2px;
+  color:var(--muted);cursor:pointer;font-family:'DM Mono',monospace;font-size:.64rem;
+  padding:.22rem .5rem;text-transform:uppercase;transition:all .12s}
+.group-item .gi-btn:hover{color:var(--text);border-color:var(--muted)}
+.group-item .gi-btn.load{color:var(--accent);border-color:var(--accent)}
+.group-item .gi-btn.load:hover{background:#1e1b12}
+
+/* ── PHOTO ATTACHMENTS ── */
+.photo-upload-label{display:flex;align-items:center;gap:.5rem;background:var(--surface2);
+  border:1px dashed var(--border);border-radius:3px;padding:.5rem .75rem;cursor:pointer;
+  font-size:.72rem;color:var(--muted);transition:border-color .15s,color .15s;margin-top:.5rem}
+.photo-upload-label:hover{border-color:var(--accent);color:var(--accent)}
+.photo-upload-label input{display:none}
+.photo-thumb{width:54px;height:54px;object-fit:cover;border-radius:2px;border:1px solid var(--border);
+  cursor:pointer;transition:opacity .15s;flex-shrink:0}
+.photo-thumb:hover{opacity:.8}
+.photo-row{display:flex;align-items:center;gap:.6rem;margin-top:.5rem}
+.photo-rm-btn{background:none;border:none;color:var(--accent2);cursor:pointer;font-size:.9rem;padding:0;line-height:1}
+
+/* ── LIGHTBOX ── */
+.lightbox{position:fixed;inset:0;background:rgba(0,0,0,.92);z-index:500;
+  display:flex;align-items:center;justify-content:center;padding:1rem;cursor:zoom-out}
+.lightbox img{max-width:100%;max-height:90vh;border-radius:3px;object-fit:contain}
+.lightbox-close{position:absolute;top:1rem;right:1.2rem;background:none;border:none;
+  color:var(--text);font-size:1.8rem;cursor:pointer;line-height:1;opacity:.7}
+.lightbox-close:hover{opacity:1}
 </style>
 </head>
 <body>
 <div class="noise"></div>
 <div class="toast" id="toast"></div>
+<div class="undo-toast" id="undoToast">
+  <span class="undo-msg" id="undoMsg">Deleted</span>
+  <button class="undo-btn" onclick="doUndo()">Undo</button>
+  <button class="undo-close" onclick="dismissUndo()">×</button>
+</div>
+<div class="lightbox" id="lightbox" style="display:none" onclick="closeLightbox()">
+  <button class="lightbox-close" onclick="closeLightbox()">×</button>
+  <img id="lightboxImg" src="" alt="Receipt photo">
+</div>
+
+<!-- Welcome overlay — shown to first-time visitors -->
+<div class="welcome-bg" id="welcomeOverlay" style="display:none">
+  <div class="welcome-box">
+    <div class="w-icon">🧾</div>
+    <h2>Trip <span>Splitter</span></h2>
+    <p>Split restaurant bills with friends — item by item.<br>Your trips are saved privately on your own device.</p>
+    <div class="welcome-steps">
+      <div class="welcome-step">
+        <span class="ws-num">1</span>
+        <span class="ws-text"><strong>Create a trip</strong> and add everyone who's splitting</span>
+      </div>
+      <div class="welcome-step">
+        <span class="ws-num">2</span>
+        <span class="ws-text"><strong>Add receipts</strong> item by item — assign each dish to the right people</span>
+      </div>
+      <div class="welcome-step">
+        <span class="ws-num">3</span>
+        <span class="ws-text"><strong>Share via link</strong> so friends can import the same trip on their device</span>
+      </div>
+    </div>
+    <button class="btn" style="width:100%;padding:.7rem" onclick="dismissWelcome()">Get Started →</button>
+    <p style="margin-top:.75rem;font-size:.68rem">Already have a trip? Use <strong style="color:var(--text)">Import Trip</strong> on the dashboard.</p>
+  </div>
+</div>
+
+<!-- Install banner — shown once on mobile after a few seconds -->
+<div class="install-banner" id="installBanner">
+  <div class="ib-text">
+    <strong>Add to Home Screen</strong>
+    Open your browser menu and tap "Add to Home Screen" for quick access
+  </div>
+  <div class="ib-actions">
+    <button class="btn ghost" style="font-size:.65rem;padding:.35rem .65rem" onclick="dismissInstallBanner()">Dismiss</button>
+  </div>
+</div>
 
 <!-- ══════════════════════════════════════════════════════
      TRIP LIST VIEW
@@ -188,10 +370,21 @@ textarea{resize:vertical;min-height:90px}
         <h1>Trip <span>Splitter</span></h1>
         <p class="hdr-sub">Your trips · saved locally</p>
       </div>
-      <button class="btn sec" onclick="openImportModal()">⬆ Import Trip</button>
+      <div style="display:flex;gap:.5rem;flex-wrap:wrap">
+        <button class="btn ghost" onclick="openGroupsModal()">👥 Groups</button>
+        <button class="btn sec" onclick="openImportModal()">⬆ Import Trip</button>
+      </div>
     </div>
   </header>
 
+  <div class="search-row" id="searchRow" style="display:none">
+    <input id="tripSearch" type="text" placeholder="Search trips…" oninput="renderTripList()">
+    <select class="sort-select" id="tripSort" onchange="renderTripList()">
+      <option value="date">Newest first</option>
+      <option value="name">A → Z</option>
+      <option value="total">Highest total</option>
+    </select>
+  </div>
   <div class="trip-grid" id="tripGrid"></div>
 </div>
 </div>
@@ -206,8 +399,33 @@ textarea{resize:vertical;min-height:90px}
       <div>
         <button class="btn ghost" onclick="goHome()" style="margin-bottom:.6rem;font-size:.68rem">← All Trips</button>
         <h1 id="tripDetailName" style="cursor:pointer" onclick="renameTripPrompt()">Trip <span>Name</span></h1>
-        <p class="hdr-sub" id="tripDetailSub">click name to rename</p>
+        <div style="display:flex;align-items:center;gap:.8rem;margin-top:.4rem;flex-wrap:wrap">
+          <p class="hdr-sub" id="tripDetailSub" style="margin-top:0">click name to rename</p>
+          <div class="status-toggle">
+            <span class="status-badge open" id="statusBadge">Open</span>
+            <button class="btn ghost" id="statusToggleBtn" onclick="toggleTripStatus()" style="font-size:.65rem;padding:.3rem .65rem">Mark Settled</button>
+          </div>
+          <button class="currency-toggle" onclick="toggleCurrencyPanel()" id="currencyToggleBtn">💱 Currency</button>
+        </div>
+        <div class="currency-panel" id="currencyPanel">
+          <div class="currency-row">
+            <div>
+              <label style="margin-top:0">Symbol</label>
+              <input id="currencySymbol" type="text" placeholder="$" maxlength="4" oninput="saveCurrency()">
+            </div>
+            <div>
+              <label style="margin-top:0">Rate (vs $)</label>
+              <input id="currencyRate" type="number" placeholder="1.00" min="0" step="0.0001" oninput="saveCurrency()">
+            </div>
+            <div>
+              <label style="margin-top:0">Code</label>
+              <input id="currencyCode" type="text" placeholder="USD" maxlength="4" oninput="saveCurrency()">
+            </div>
+          </div>
+          <p style="font-size:.65rem;color:var(--muted);margin-top:.5rem">Amounts are shown in your chosen currency. Rate converts from USD (e.g. EUR rate ≈ 0.92).</p>
+        </div>
       </div>
+      <button class="btn ghost" onclick="openLoadGroupModal()" style="font-size:.68rem;align-self:flex-start;margin-top:.2rem">👥 Load Group</button>
     </div>
   </header>
 
@@ -233,6 +451,14 @@ textarea{resize:vertical;min-height:90px}
         <label>Paid by</label>
         <select id="rPaidBy"><option value="">— who paid? —</option></select>
       </div>
+    </div>
+    <!-- Photo attachment -->
+    <div id="photoRow" style="margin-bottom:.9rem">
+      <div id="photoPreviewArea"></div>
+      <label class="photo-upload-label">
+        <span>📷 Attach receipt photo <span style="font-size:.6rem;color:var(--muted)">(optional)</span></span>
+        <input type="file" id="photoInput" accept="image/*" onchange="handlePhotoUpload(event)">
+      </label>
     </div>
     <div class="section-label">Add items</div>
     <div class="item-form">
@@ -265,8 +491,10 @@ textarea{resize:vertical;min-height:90px}
       <div><label style="margin-top:0">Tax %</label><input id="rTaxPct" type="number" placeholder="e.g. 8.875" min="0" step=".001" oninput="updateTotalPreview()"></div>
       <div><label style="margin-top:0">Tip %</label><input id="rTipPct" type="number" placeholder="e.g. 20" min="0" step=".1" oninput="updateTotalPreview()"></div>
       <div><label style="margin-top:0">Tip $ (override)</label><input id="rTipFlat" type="number" placeholder="0.00" min="0" step=".01" oninput="updateTotalPreview()"></div>
-      <div><label style="margin-top:0">Extra fee %</label><input id="rFeePct" type="number" placeholder="e.g. 3" min="0" step=".001" oninput="updateTotalPreview()"></div>
-      <div style="grid-column:2/-1"><label style="margin-top:0">Fee label <span style="color:var(--muted);font-size:.6rem;text-transform:none">(optional)</span></label><input id="rFeeLabel" type="text" placeholder="e.g. DC surcharge" maxlength="40" oninput="updateTotalPreview()"></div>
+      <div class="fee-row">
+        <div><label style="margin-top:0">Extra fee %</label><input id="rFeePct" type="number" placeholder="e.g. 3" min="0" step=".001" oninput="updateTotalPreview()"></div>
+        <div><label style="margin-top:0">Fee label <span style="color:var(--muted);font-size:.6rem;text-transform:none">(optional)</span></label><input id="rFeeLabel" type="text" placeholder="e.g. DC surcharge" maxlength="40" oninput="updateTotalPreview()"></div>
+      </div>
     </div>
     <div class="total-preview" id="totalPreview" style="display:none">
       <div><div class="tp-label">Receipt total</div><div class="tp-breakdown" id="tpBreakdown"></div></div>
@@ -309,10 +537,17 @@ textarea{resize:vertical;min-height:90px}
     <div class="card-title">③ Export &amp; Share</div>
     <div class="export-row">
       <button class="btn sec" onclick="shareViaURL()">🔗 Share Link</button>
+      <button class="btn sec" onclick="openSummaryCard()">🖼 Summary Card</button>
       <button class="btn sec" onclick="copyText()">📋 Copy Summary</button>
-      <button class="btn sec" onclick="downloadJSON()">⬇ Download JSON</button>
-      <button class="btn sec" onclick="downloadCSV()">⬇ Download CSV</button>
-      <button class="btn ghost" onclick="clearCurrentTrip()">🗑 Clear Trip Data</button>
+      <button class="btn sec" onclick="downloadPDF()">🖨 Print / PDF</button>
+      <button class="btn sec" onclick="downloadCSV()">📊 Spreadsheet (CSV)</button>
+      <button class="btn ghost" onclick="downloadJSON()" title="Export full trip data for backup or re-import">💾 Backup (JSON)</button>
+    </div>
+    <p style="font-size:.65rem;color:var(--muted);margin-top:.75rem;line-height:1.5">
+      💾 <strong style="color:var(--text)">Backup (JSON)</strong> exports full trip data that can be re-imported exactly. Use this to back up or share a trip.
+    </p>
+    <div style="display:flex;justify-content:flex-end;margin-top:.9rem">
+      <button class="btn ghost" onclick="clearCurrentTrip()" style="font-size:.66rem">🗑 Clear Trip Data</button>
     </div>
   </div>
 </div>
@@ -338,21 +573,86 @@ textarea{resize:vertical;min-height:90px}
 <div class="modal-bg" id="importModal" style="display:none" onclick="if(event.target===this)closeModal('importModal')">
   <div class="modal">
     <h3>Import Trip</h3>
+    <p style="font-size:.75rem;color:var(--muted);margin-bottom:.9rem;line-height:1.5">
+      Import a trip from a <strong style="color:var(--text)">Backup (JSON)</strong> file previously exported from Trip Splitter.<br>
+      <span style="color:var(--accent2)">Note: CSV and PDF files cannot be imported.</span>
+    </p>
     <div class="import-tabs">
       <button class="itab on" id="itab-paste" onclick="setImportTab('paste')">Paste JSON</button>
-      <button class="itab"    id="itab-file"  onclick="setImportTab('file')">Upload File</button>
+      <button class="itab"    id="itab-file"  onclick="setImportTab('file')">Upload .json File</button>
     </div>
     <div id="import-paste">
-      <label>Paste exported JSON below</label>
-      <textarea id="importJSON" placeholder='{"tripName":"...","people":[...],"receipts":[...]}'></textarea>
+      <label>Paste the contents of a Backup (JSON) file</label>
+      <textarea id="importJSON" placeholder='{"tripName":"...","people":[...],"receipts":[],...}'></textarea>
     </div>
     <div id="import-file" style="display:none">
-      <label>Select a .json file previously exported from Trip Splitter</label>
+      <label>Select a .json backup file exported from Trip Splitter</label>
       <input type="file" id="importFile" accept=".json" style="padding:.4rem">
     </div>
     <div class="modal-footer">
       <button class="btn ghost" onclick="closeModal('importModal')">Cancel</button>
-      <button class="btn" onclick="doImport()">Import</button>
+      <button class="btn" onclick="doImport()">Import Trip</button>
+    </div>
+  </div>
+</div>
+
+<!-- Groups Modal -->
+<div class="modal-bg" id="groupsModal" style="display:none" onclick="if(event.target===this)closeModal('groupsModal')">
+  <div class="modal" style="max-width:560px">
+    <h3>People Groups</h3>
+    <p style="font-size:.75rem;color:var(--muted);margin-bottom:1.1rem">Save named groups to quickly populate any trip.</p>
+
+    <!-- Existing groups list -->
+    <div id="groupsList"><div class="empty">No groups yet.</div></div>
+
+    <div style="height:1px;background:var(--border);margin:1.1rem 0"></div>
+
+    <!-- Create / edit form -->
+    <div id="groupFormTitle" style="font-family:'Playfair Display',serif;font-size:.95rem;font-weight:700;color:var(--accent);margin-bottom:.7rem">New Group</div>
+    <div style="display:flex;gap:.5rem;margin-bottom:.65rem">
+      <input id="groupNameInput" type="text" placeholder="Group name (e.g. Roommates)" maxlength="40" style="flex:1">
+    </div>
+    <!-- People builder for group -->
+    <div style="display:flex;gap:.5rem;margin-bottom:.5rem">
+      <input id="groupPersonInput" type="text" placeholder="Add a person…" maxlength="40" style="flex:1">
+      <button class="btn" style="padding:.5rem .8rem" onclick="addGroupPerson()">Add</button>
+    </div>
+    <div id="groupPeopleList" style="display:flex;flex-wrap:wrap;gap:.35rem;min-height:28px;margin-bottom:.5rem"></div>
+    <!-- Quick-load from current trip -->
+    <div id="groupQuickLoad" style="display:none;margin-bottom:.6rem">
+      <button class="btn ghost" style="font-size:.66rem;padding:.32rem .7rem" onclick="loadCurrentPeopleIntoGroupForm()">← Pull from current trip</button>
+    </div>
+
+    <div class="modal-footer">
+      <button class="btn ghost" onclick="cancelGroupEdit()">Cancel</button>
+      <button class="btn" id="groupSaveBtn" onclick="saveGroup()">Save Group</button>
+    </div>
+  </div>
+</div>
+
+<!-- Load Group Modal -->
+<div class="modal-bg" id="loadGroupModal" style="display:none" onclick="if(event.target===this)closeModal('loadGroupModal')">
+  <div class="modal">
+    <h3>Load a Group</h3>
+    <p style="font-size:.75rem;color:var(--muted);margin-bottom:1rem">Choose a saved group to add to this trip's people list.</p>
+    <div id="loadGroupList"><div class="empty">No groups saved yet. Create one from the dashboard.</div></div>
+    <div class="modal-footer">
+      <button class="btn ghost" onclick="closeModal('loadGroupModal')">Cancel</button>
+    </div>
+  </div>
+</div>
+<!-- Summary Card Modal -->
+<div class="modal-bg" id="summaryCardModal" style="display:none" onclick="if(event.target===this)closeModal('summaryCardModal')">
+  <div class="modal" style="max-width:520px">
+    <h3>Summary Card</h3>
+    <p style="font-size:.75rem;color:var(--muted);margin-bottom:1rem">Screenshot and share in your group chat, or download as an image.</p>
+    <div class="summary-card-wrap">
+      <canvas id="summaryCanvas" width="480" height="400" style="width:100%;border-radius:6px;cursor:pointer" onclick="downloadSummaryCard()"></canvas>
+    </div>
+    <div class="summary-card-actions">
+      <button class="btn" onclick="downloadSummaryCard()">⬇ Download Image</button>
+      <button class="btn sec" onclick="copySummaryCard()">📋 Copy Image</button>
+      <button class="btn ghost" onclick="closeModal('summaryCardModal')">Close</button>
     </div>
   </div>
 </div>
@@ -361,13 +661,26 @@ textarea{resize:vertical;min-height:90px}
 // ═══════════════════════════════════════════════════════
 // STORAGE & TRIP MANAGEMENT
 // ═══════════════════════════════════════════════════════
-const STORE_KEY = 'tripSplitter_v1';
+const STORE_KEY  = 'tripSplitter_v1';
+const GROUPS_KEY = 'tripSplitter_groups_v1';
 
 function loadStore(){
   try{ return JSON.parse(localStorage.getItem(STORE_KEY))||{trips:[]}; }
   catch(e){ return {trips:[]}; }
 }
-function saveStore(store){ localStorage.setItem(STORE_KEY, JSON.stringify(store)); }
+function saveStore(store){
+  try{
+    localStorage.setItem(STORE_KEY, JSON.stringify(store));
+  } catch(e){
+    // localStorage full or unavailable (e.g. private browsing with strict settings)
+    const isQuota = e instanceof DOMException && (e.code===22||e.name==='QuotaExceededError'||e.name==='NS_ERROR_DOM_QUOTA_REACHED');
+    if(isQuota){
+      toast('⚠ Storage full — download a JSON backup to avoid losing data');
+    } else {
+      toast('⚠ Could not save — storage may be unavailable (try a non-private window)');
+    }
+  }
+}
 function getTrips(){ return loadStore().trips; }
 
 function saveTrip(trip){
@@ -386,7 +699,7 @@ function deleteTrip(id){
 let currentTrip = null; // {id, tripName, people, receipts, createdAt}
 
 function newTripObj(name){
-  return {id:Date.now(), tripName:name, people:[], receipts:[], createdAt:new Date().toLocaleDateString()};
+  return {id:Date.now(), tripName:name, people:[], receipts:[], createdAt:new Date().toLocaleDateString(), settled:false};
 }
 
 function persistCurrent(){
@@ -398,12 +711,17 @@ function persistCurrent(){
 // ═══════════════════════════════════════════════════════
 function renderTripList(){
   const trips=getTrips();
+  // sort: open trips first, settled last
+  const sorted=[...trips].sort((a,b)=>(a.settled?1:0)-(b.settled?1:0));
   const grid=document.getElementById('tripGrid');
-  const tiles=trips.map(t=>{
+  const tiles=sorted.map(t=>{
     const total=t.receipts.reduce((s,r)=>s+r.total,0);
-    return `<div class="trip-tile" onclick="openTrip(${t.id})">
+    const statusBadge=t.settled
+      ? `<span class="tt-status settled">Settled ✓</span>`
+      : `<span class="tt-status open">Open</span>`;
+    return `<div class="trip-tile${t.settled?' settled':''}" onclick="openTrip(${t.id})">
       <button class="tt-del" onclick="event.stopPropagation();deleteTripConfirm(${t.id})" title="Delete trip">×</button>
-      <div class="tt-name">${he(t.tripName)}</div>
+      <div class="tt-name">${he(t.tripName)} ${statusBadge}</div>
       <div class="tt-meta">${t.people.length} people · ${t.receipts.length} receipt${t.receipts.length!==1?'s':''} · ${t.createdAt}</div>
       ${total>0?`<div class="tt-total">${fmt(total)} total</div>`:''}
     </div>`;
@@ -456,6 +774,8 @@ function openTrip(id){
   document.getElementById('tripDetailView').style.display='block';
 
   resetBuilder();
+  loadCurrencyUI();
+  renderStatusBadge();
   renderPeople();
   renderPaidBy();
   renderItemSplitUI();
@@ -474,9 +794,11 @@ function deleteTripConfirm(id){
   const store=loadStore();
   const t=store.trips.find(x=>x.id===id);
   if(!t) return;
-  if(!confirm(`Delete "${t.tripName}"? This cannot be undone.`)) return;
+  if(!confirm(`Delete "${t.tripName}"?`)) return;
+  const snapshot={type:'trip', trip:JSON.parse(JSON.stringify(t))};
   deleteTrip(id);
   renderTripList();
+  pushUndo(`"${t.tripName}" deleted`, snapshot);
 }
 
 function renameTripPrompt(){
@@ -544,8 +866,44 @@ let editingReceiptId = null;
 
 function he(s){ return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;') }
 function pid(n){ return 'p_'+[...n].map(c=>c.charCodeAt(0).toString(16)).join('') }
-function fmt(v){ return '$'+Math.abs(+v).toFixed(2) }
+
+// Currency-aware formatter — uses trip's currency settings if set
+function fmt(v){
+  const sym = currentTrip?.currency?.symbol || '$';
+  const rate = currentTrip?.currency?.rate || 1;
+  return sym + Math.abs(+v * rate).toFixed(2);
+}
+// Raw USD formatter for internal calculations (PDF, CSV exports)
+function fmtRaw(v){ return '$'+Math.abs(+v).toFixed(2); }
+
 let _tt; function toast(m){ const t=document.getElementById('toast'); t.textContent=m; t.classList.add('on'); clearTimeout(_tt); _tt=setTimeout(()=>t.classList.remove('on'),2400) }
+
+// ═══════════════════════════════════════════════════════
+// CURRENCY
+// ═══════════════════════════════════════════════════════
+function toggleCurrencyPanel(){
+  document.getElementById('currencyPanel').classList.toggle('open');
+}
+function saveCurrency(){
+  if(!currentTrip) return;
+  const sym  = document.getElementById('currencySymbol').value.trim() || '$';
+  const rate = parseFloat(document.getElementById('currencyRate').value) || 1;
+  const code = document.getElementById('currencyCode').value.trim() || 'USD';
+  currentTrip.currency = {symbol:sym, rate, code};
+  persistCurrent();
+  renderAll(); // re-render all amounts
+}
+function loadCurrencyUI(){
+  const c = currentTrip?.currency;
+  document.getElementById('currencySymbol').value = c?.symbol || '';
+  document.getElementById('currencyRate').value   = c?.rate   || '';
+  document.getElementById('currencyCode').value   = c?.code   || '';
+  // Show toggle label with current currency if set
+  const btn = document.getElementById('currencyToggleBtn');
+  btn.textContent = c?.code && c.code!=='USD' ? `💱 ${c.code}` : '💱 Currency';
+  // Close panel on load
+  document.getElementById('currencyPanel').classList.remove('open');
+}
 
 // auto-persist whenever receipts/people change
 function persist(){
@@ -554,6 +912,267 @@ function persist(){
   currentTrip.receipts=receipts;
   saveTrip(currentTrip);
 }
+
+// ═══════════════════════════════════════════════════════
+// UNDO SYSTEM
+// ═══════════════════════════════════════════════════════
+let undoStack = null; // {type, snapshot, label}
+let _undoTimer = null;
+
+function pushUndo(label, snapshot){
+  undoStack = {label, snapshot};
+  clearTimeout(_undoTimer);
+  const ut = document.getElementById('undoToast');
+  document.getElementById('undoMsg').textContent = label;
+  ut.classList.add('on');
+  _undoTimer = setTimeout(()=>{ ut.classList.remove('on'); undoStack=null; }, 5000);
+}
+function doUndo(){
+  if(!undoStack) return;
+  const {snapshot} = undoStack;
+  if(snapshot.type==='receipt'){
+    receipts = snapshot.receipts; persist(); renderAll();
+    toast('Receipt restored');
+  } else if(snapshot.type==='person'){
+    people = snapshot.people; receipts = snapshot.receipts; persist();
+    renderPeople(); renderPaidBy(); renderItemSplitUI(); renderAll();
+    toast('Person restored');
+  } else if(snapshot.type==='trip'){
+    saveTrip(snapshot.trip); renderTripList();
+    toast('Trip restored');
+  }
+  dismissUndo();
+}
+function dismissUndo(){
+  clearTimeout(_undoTimer);
+  document.getElementById('undoToast').classList.remove('on');
+  undoStack=null;
+}
+
+// ═══════════════════════════════════════════════════════
+// TRIP STATUS  (open / settled)
+// ═══════════════════════════════════════════════════════
+function toggleTripStatus(){
+  if(!currentTrip) return;
+  currentTrip.settled = !currentTrip.settled;
+  persistCurrent();
+  renderStatusBadge();
+}
+function renderStatusBadge(){
+  if(!currentTrip) return;
+  const badge = document.getElementById('statusBadge');
+  const btn   = document.getElementById('statusToggleBtn');
+  if(currentTrip.settled){
+    badge.textContent='Settled ✓'; badge.className='status-badge settled';
+    btn.textContent='Re-open';
+  } else {
+    badge.textContent='Open'; badge.className='status-badge open';
+    btn.textContent='Mark Settled';
+  }
+}
+
+// ═══════════════════════════════════════════════════════
+// GROUP PRESETS  — full create / edit / delete
+// ═══════════════════════════════════════════════════════
+function loadGroups(){
+  try{ return JSON.parse(localStorage.getItem(GROUPS_KEY))||[]; }
+  catch(e){ return []; }
+}
+function saveGroups(groups){
+  try{ localStorage.setItem(GROUPS_KEY, JSON.stringify(groups)); }
+  catch(e){ toast('⚠ Could not save groups'); }
+}
+
+let editingGroupIdx = null;
+let groupFormPeople = [];
+
+function openGroupsModal(){
+  editingGroupIdx = null;
+  groupFormPeople = [];
+  document.getElementById('groupNameInput').value = '';
+  document.getElementById('groupFormTitle').textContent = 'New Group';
+  document.getElementById('groupSaveBtn').textContent  = 'Save Group';
+  document.getElementById('groupQuickLoad').style.display = (currentTrip && people.length) ? 'block' : 'none';
+  renderGroupFormPeople();
+  renderGroupsList();
+  document.getElementById('groupsModal').style.display = 'flex';
+  setTimeout(()=>document.getElementById('groupNameInput').focus(), 50);
+}
+document.getElementById('groupPersonInput').addEventListener('keydown', e=>{ if(e.key==='Enter') addGroupPerson(); });
+
+function addGroupPerson(){
+  const el = document.getElementById('groupPersonInput');
+  const name = el.value.trim();
+  if(!name) return;
+  if(groupFormPeople.includes(name)){ toast('Already in group'); el.focus(); return; }
+  groupFormPeople.push(name);
+  el.value = ''; el.focus();
+  renderGroupFormPeople();
+}
+function removeGroupPerson(i){
+  groupFormPeople.splice(i, 1);
+  renderGroupFormPeople();
+}
+function renderGroupFormPeople(){
+  const el = document.getElementById('groupPeopleList');
+  el.innerHTML = groupFormPeople.length
+    ? groupFormPeople.map((p,i)=>`
+        <div class="pill">
+          ${he(p)}
+          <span class="x" onclick="removeGroupPerson(${i})">×</span>
+        </div>`).join('')
+    : '<span style="font-size:.72rem;color:var(--muted)">No people yet — add above</span>';
+}
+function loadCurrentPeopleIntoGroupForm(){
+  people.forEach(p=>{ if(!groupFormPeople.includes(p)) groupFormPeople.push(p); });
+  renderGroupFormPeople();
+}
+
+function editGroupOpen(i){
+  const groups = loadGroups();
+  const g = groups[i];
+  editingGroupIdx = i;
+  groupFormPeople = [...g.people];
+  document.getElementById('groupNameInput').value = g.name;
+  document.getElementById('groupFormTitle').textContent = 'Edit Group';
+  document.getElementById('groupSaveBtn').textContent  = 'Update Group';
+  document.getElementById('groupQuickLoad').style.display = (currentTrip && people.length) ? 'block' : 'none';
+  renderGroupFormPeople();
+  document.getElementById('groupNameInput').scrollIntoView({behavior:'smooth', block:'nearest'});
+  document.getElementById('groupNameInput').focus();
+}
+
+function saveGroup(){
+  const name = document.getElementById('groupNameInput').value.trim();
+  if(!name){ toast('Enter a group name'); return; }
+  if(!groupFormPeople.length){ toast('Add at least one person'); return; }
+  const groups = loadGroups();
+  const entry = { name, people: [...groupFormPeople] };
+  if(editingGroupIdx !== null){
+    groups[editingGroupIdx] = entry;
+    toast(`"${name}" updated!`);
+  } else {
+    groups.push(entry);
+    toast(`"${name}" saved!`);
+  }
+  saveGroups(groups);
+  editingGroupIdx = null;
+  groupFormPeople = [];
+  document.getElementById('groupNameInput').value = '';
+  document.getElementById('groupFormTitle').textContent = 'New Group';
+  document.getElementById('groupSaveBtn').textContent  = 'Save Group';
+  renderGroupFormPeople();
+  renderGroupsList();
+}
+
+function cancelGroupEdit(){
+  if(editingGroupIdx !== null){
+    editingGroupIdx = null;
+    groupFormPeople = [];
+    document.getElementById('groupNameInput').value = '';
+    document.getElementById('groupFormTitle').textContent = 'New Group';
+    document.getElementById('groupSaveBtn').textContent  = 'Save Group';
+    renderGroupFormPeople();
+  } else {
+    closeModal('groupsModal');
+  }
+}
+
+function renderGroupsList(){
+  const groups = loadGroups();
+  const el = document.getElementById('groupsList');
+  if(!groups.length){ el.innerHTML='<div class="empty">No groups yet — create one below.</div>'; return; }
+  el.innerHTML = `<div class="group-list">` + groups.map((g,i)=>`
+    <div class="group-item">
+      <div style="flex:1;min-width:0">
+        <div class="gi-name">${he(g.name)}</div>
+        <div class="gi-people">${g.people.map(he).join(', ')}</div>
+      </div>
+      <div class="gi-actions">
+        <button class="gi-btn load" onclick="editGroupOpen(${i})">Edit</button>
+        <button class="gi-btn" onclick="deleteGroup(${i})">Delete</button>
+      </div>
+    </div>`).join('') + `</div>`;
+}
+
+function deleteGroup(i){
+  const groups = loadGroups();
+  if(!confirm(`Delete group "${groups[i].name}"?`)) return;
+  groups.splice(i, 1); saveGroups(groups); renderGroupsList();
+  if(editingGroupIdx === i){ editingGroupIdx=null; groupFormPeople=[]; document.getElementById('groupNameInput').value=''; renderGroupFormPeople(); }
+}
+
+function openLoadGroupModal(){
+  const groups = loadGroups();
+  const el = document.getElementById('loadGroupList');
+  if(!groups.length){
+    el.innerHTML = '<div class="empty">No groups saved yet. Create one from the dashboard.</div>';
+  } else {
+    el.innerHTML = `<div class="group-list">` + groups.map((g,i)=>`
+      <div class="group-item">
+        <div>
+          <div class="gi-name">${he(g.name)}</div>
+          <div class="gi-people">${g.people.map(he).join(', ')}</div>
+        </div>
+        <div class="gi-actions">
+          <button class="gi-btn load" onclick="loadGroup(${i})">Load</button>
+        </div>
+      </div>`).join('') + `</div>`;
+  }
+  document.getElementById('loadGroupModal').style.display = 'flex';
+}
+function loadGroup(i){
+  const groups = loadGroups();
+  const g = groups[i];
+  let added = 0;
+  g.people.forEach(p=>{ if(!people.includes(p)){ people.push(p); added++; } });
+  persist(); renderPeople(); renderPaidBy(); renderItemSplitUI();
+  closeModal('loadGroupModal');
+  toast(`Loaded "${g.name}" — ${added} new person${added!==1?'s':''} added`);
+}
+
+// ═══════════════════════════════════════════════════════
+// PHOTO ATTACHMENTS
+// ═══════════════════════════════════════════════════════
+let pendingPhoto = null; // base64 string or null
+
+function handlePhotoUpload(event){
+  const file=event.target.files[0]; if(!file) return;
+  if(file.size > 5*1024*1024){ toast('Photo too large — max 5MB'); return; }
+  const reader=new FileReader();
+  reader.onload=e=>{
+    // Compress by drawing to a canvas at max 800px wide
+    const img=new Image();
+    img.onload=()=>{
+      const maxW=800, scale=Math.min(1, maxW/img.width);
+      const canvas=document.createElement('canvas');
+      canvas.width=img.width*scale; canvas.height=img.height*scale;
+      canvas.getContext('2d').drawImage(img,0,0,canvas.width,canvas.height);
+      pendingPhoto=canvas.toDataURL('image/jpeg',0.75);
+      renderPhotoPreview();
+    };
+    img.src=e.target.result;
+  };
+  reader.readAsDataURL(file);
+  event.target.value=''; // reset input so same file can be re-selected
+}
+
+function renderPhotoPreview(){
+  const area=document.getElementById('photoPreviewArea');
+  if(!pendingPhoto){ area.innerHTML=''; return; }
+  area.innerHTML=`<div class="photo-row">
+    <img class="photo-thumb" src="${pendingPhoto}" alt="Receipt" onclick="openLightbox('${pendingPhoto}')">
+    <span style="font-size:.72rem;color:var(--muted)">Photo attached</span>
+    <button class="photo-rm-btn" onclick="removePhoto()" title="Remove photo">×</button>
+  </div>`;
+}
+function removePhoto(){ pendingPhoto=null; renderPhotoPreview(); }
+
+function openLightbox(src){
+  document.getElementById('lightboxImg').src=src;
+  document.getElementById('lightbox').style.display='flex';
+}
+function closeLightbox(){ document.getElementById('lightbox').style.display='none'; }
 
 // ═══════════════════════════════════════════════════════
 // PEOPLE
@@ -571,8 +1190,10 @@ function removePerson(i){
   const name=people[i];
   const inUse=receipts.some(r=>r.paidBy===name||r.items.some(it=>name in it.shares));
   if(inUse&&!confirm(`"${name}" appears in saved receipts. Remove anyway?`)) return;
+  const snapshot={type:'person', people:[...people], receipts:JSON.parse(JSON.stringify(receipts))};
   people.splice(i,1); persist();
   renderPeople(); renderPaidBy(); renderItemSplitUI(); renderAll();
+  pushUndo(`"${name}" removed`, snapshot);
 }
 function renderPeople(){
   document.getElementById('peopleList').innerHTML=people.length
@@ -744,7 +1365,9 @@ function saveReceipt(){
   const extrasTotal=tax+tip+fee, shares={};
   people.forEach(p=>{ const amt=personSubs[p]+(sub>0?extrasTotal*(personSubs[p]/sub):0); if(amt>.001) shares[p]=amt; });
   const date=editingReceiptId?(receipts.find(r=>r.id===editingReceiptId)?.date||new Date().toLocaleDateString()):new Date().toLocaleDateString();
-  const receipt={id:editingReceiptId||Date.now(), name, paidBy, items:[...pendingItems], sub, tax, tip, fee, feeLabel, total, shares, date};
+  // preserve existing photo if none newly attached
+  const existingPhoto = editingReceiptId ? (receipts.find(r=>r.id===editingReceiptId)?.photo||null) : null;
+  const receipt={id:editingReceiptId||Date.now(), name, paidBy, items:[...pendingItems], sub, tax, tip, fee, feeLabel, total, shares, date, photo: pendingPhoto||existingPhoto};
   const wasEditing=!!editingReceiptId;
   if(editingReceiptId){ receipts=receipts.map(r=>r.id===editingReceiptId?receipt:r); }
   else { receipts.push(receipt); }
@@ -753,13 +1376,14 @@ function saveReceipt(){
 }
 
 function resetBuilder(){
-  pendingItems=[]; editingReceiptId=null;
+  pendingItems=[]; editingReceiptId=null; pendingPhoto=null;
   ['rName','rTaxPct','rTipPct','rTipFlat','rFeePct','rFeeLabel'].forEach(id=>document.getElementById(id).value='');
   document.getElementById('rPaidBy').value='';
   document.getElementById('totalPreview').style.display='none';
   document.getElementById('builderTitle').textContent='② Build a Receipt';
   document.getElementById('saveBtn').textContent='Save Receipt →';
   document.getElementById('cancelEditBtn').style.display='none';
+  document.getElementById('photoPreviewArea').innerHTML='';
   renderPendingItems(); renderItemSplitUI();
 }
 
@@ -807,6 +1431,7 @@ function renderReceiptLog(){
         ${extrasLine}
         <div class="rc-items">${itemLines}</div>
         <div class="rc-meta" style="margin-top:.4rem;color:var(--text)">${shareLines}</div>
+        ${r.photo?`<div style="margin-top:.6rem"><img class="photo-thumb" src="${r.photo}" alt="Receipt photo" onclick="openLightbox('${r.photo}')" title="View full photo"></div>`:''}
       </div>
     </div>`;
   }).join('');
@@ -820,25 +1445,27 @@ function renderPersonBreakdown(){
   if(!people.length||!receipts.length){el.innerHTML='<div class="empty">Add receipts to see itemized breakdowns.</div>';return;}
 
   const cards=people.map(p=>{
-    // collect all items this person is part of, across all receipts
     const lines=[];
-    let itemTotal=0, extraTotal=0;
+    let runningTotal=0;
 
     receipts.forEach(r=>{
       const personItemSub=r.items.reduce((s,it)=>s+(it.shares[p]||0),0);
-      if(personItemSub<.001) return; // person has nothing on this receipt
+      if(personItemSub<.001) return;
 
+      // Item lines (for transparency / breakdown display)
       r.items.forEach(it=>{
         if((it.shares[p]||0)<.001) return;
-        lines.push({label:`${it.name} <span style="color:var(--muted);font-size:.65rem">(${he(r.name)})</span>`, val:it.shares[p]});
-        itemTotal+=it.shares[p];
+        lines.push({label:`${he(it.name)} <span style="color:var(--muted);font-size:.65rem">(${he(r.name)})</span>`, val:it.shares[p], dim:false});
       });
 
-      // proportional tax/tip/fee for this person on this receipt
+      // Tax/tip/fee lines (proportional, display only)
       const ratio=r.sub>0?personItemSub/r.sub:0;
-      if(r.tax>.001){ const v=r.tax*ratio; lines.push({label:`Tax <span style="color:var(--muted);font-size:.65rem">(${he(r.name)})</span>`,val:v,dim:true}); extraTotal+=v; }
-      if(r.tip>.001){ const v=r.tip*ratio; lines.push({label:`Tip <span style="color:var(--muted);font-size:.65rem">(${he(r.name)})</span>`,val:v,dim:true}); extraTotal+=v; }
-      if(r.fee>.001){ const v=r.fee*ratio; lines.push({label:`${he(r.feeLabel||'Fee')} <span style="color:var(--muted);font-size:.65rem">(${he(r.name)})</span>`,val:v,dim:true}); extraTotal+=v; }
+      if(r.tax>.001) lines.push({label:`Tax <span style="color:var(--muted);font-size:.65rem">(${he(r.name)})</span>`,val:r.tax*ratio,dim:true});
+      if(r.tip>.001) lines.push({label:`Tip <span style="color:var(--muted);font-size:.65rem">(${he(r.name)})</span>`,val:r.tip*ratio,dim:true});
+      if(r.fee>.001) lines.push({label:`${he(r.feeLabel||'Fee')} <span style="color:var(--muted);font-size:.65rem">(${he(r.name)})</span>`,val:r.fee*ratio,dim:true});
+
+      // Fix 3: use the authoritative stored share for the total, not the sum of display lines
+      runningTotal += r.shares[p]||0;
     });
 
     if(!lines.length) return `<div class="breakdown-person"><div class="bp-name">${he(p)}</div><div style="font-size:.72rem;color:var(--muted)">No charges</div></div>`;
@@ -847,7 +1474,7 @@ function renderPersonBreakdown(){
     return `<div class="breakdown-person">
       <div class="bp-name">${he(p)}</div>
       ${lineHTML}
-      <div class="bp-total"><span>Total</span><span>${fmt(itemTotal+extraTotal)}</span></div>
+      <div class="bp-total"><span>Total owed</span><span>${fmt(runningTotal)}</span></div>
     </div>`;
   }).join('');
 
@@ -860,8 +1487,11 @@ function toggleReceipt(id){
 }
 
 function removeReceipt(id){
+  const r=receipts.find(x=>x.id===id);
+  const snapshot={type:'receipt', receipts:JSON.parse(JSON.stringify(receipts))};
   if(editingReceiptId===id) resetBuilder();
   receipts=receipts.filter(r=>r.id!==id); persist(); renderAll();
+  pushUndo(`"${r?.name||'Receipt'}" deleted`, snapshot);
 }
 
 function editReceipt(id){
@@ -879,6 +1509,9 @@ function editReceipt(id){
   document.getElementById('rFeePct').value=r.fee>0&&r.sub>0?(r.fee/r.sub*100).toFixed(3):'';
   document.getElementById('rFeeLabel').value=r.feeLabel||'';
   pendingItems=[...r.items.map(it=>({...it,id:it.id||Date.now()+Math.random()}))];
+  // restore existing photo into pending state
+  pendingPhoto = r.photo||null;
+  renderPhotoPreview();
   document.getElementById('builderTitle').textContent='② Edit Receipt';
   document.getElementById('saveBtn').textContent='Update Receipt →';
   document.getElementById('cancelEditBtn').style.display='inline-block';
@@ -944,29 +1577,63 @@ function renderSettlements(settlements){
 }
 
 // ═══════════════════════════════════════════════════════
-// SHARE VIA URL
+// SHARE VIA URL  (Fix 1: lz-string compressed to stay well under URL length limits)
 // ═══════════════════════════════════════════════════════
 function shareViaURL(){
   if(!currentTrip){ toast('No trip open'); return; }
-  const data={tripName:currentTrip.tripName,createdAt:currentTrip.createdAt,people,receipts};
+  // Strip photo data from share payload — photos are too large for URLs
+  const shareReceipts=receipts.map(r=>{ const {photo,...rest}=r; return rest; });
+  const hasPhotos=receipts.some(r=>r.photo);
+  const data={tripName:currentTrip.tripName,createdAt:currentTrip.createdAt,people,receipts:shareReceipts};
   const json=JSON.stringify(data);
-  // encode as base64 in the URL hash
-  const encoded=btoa(unescape(encodeURIComponent(json)));
-  const url=location.origin+location.pathname+'#trip='+encoded;
-  navigator.clipboard?.writeText(url).then(()=>toast('Share link copied!')).catch(()=>{
-    prompt('Copy this link:',url); toast('Link ready — copy from the box');
+
+  // Use lz-string if available (typically reduces size 60-70%), fall back to plain base64
+  let encoded, prefix;
+  if(typeof LZString !== 'undefined'){
+    encoded=LZString.compressToEncodedURIComponent(json);
+    prefix='#trip=lz:';
+  } else {
+    encoded=btoa(unescape(encodeURIComponent(json)));
+    prefix='#trip=';
+  }
+
+  const url=location.origin+location.pathname+prefix+encoded;
+
+  // Warn if still long (shouldn't happen with lz-string but just in case)
+  if(url.length>7500){
+    toast('⚠ Trip is very large — consider sharing the JSON file instead');
+    return;
+  }
+
+  navigator.clipboard?.writeText(url).then(()=>{
+    toast(hasPhotos ? 'Link copied! (photos not included — share JSON for those)' : 'Share link copied!');
+  }).catch(()=>{
+    prompt('Copy this link:',url);
+    toast('Link ready — copy from the box');
   });
 }
 
 function checkURLTrip(){
   const hash=location.hash;
   if(!hash.startsWith('#trip=')) return;
+
   try{
-    const encoded=hash.slice(6);
-    const json=decodeURIComponent(escape(atob(encoded)));
+    let json;
+    const payload=hash.slice(6); // strip '#trip='
+
+    if(payload.startsWith('lz:')){
+      // lz-string compressed
+      if(typeof LZString==='undefined') throw new Error('LZString not loaded');
+      json=LZString.decompressFromEncodedURIComponent(payload.slice(3));
+      if(!json) throw new Error('Decompression failed');
+    } else {
+      // legacy plain base64
+      json=decodeURIComponent(escape(atob(payload)));
+    }
+
     const data=JSON.parse(json);
     if(!data.tripName||!Array.isArray(data.people)||!Array.isArray(data.receipts)) return;
-    // clear hash so refreshing doesn't re-import
+
     history.replaceState(null,'',location.pathname);
     const existing=getTrips().find(t=>t.tripName===data.tripName&&t.createdAt===data.createdAt);
     if(existing){
@@ -977,7 +1644,7 @@ function checkURLTrip(){
       const trip={id:Date.now(),tripName:data.tripName,people:data.people,receipts:data.receipts,createdAt:data.createdAt||new Date().toLocaleDateString()};
       saveTrip(trip); renderTripList(); openTrip(trip.id);
     }
-  } catch(e){ /* malformed hash, ignore */ }
+  } catch(e){ /* malformed hash, ignore silently */ }
 }
 
 // ═══════════════════════════════════════════════════════
@@ -1004,11 +1671,90 @@ function copyText(){
   const text=buildText();
   navigator.clipboard?.writeText(text).then(()=>toast('Copied!')).catch(()=>{ const ta=Object.assign(document.createElement('textarea'),{value:text,style:'position:fixed;opacity:0'}); document.body.appendChild(ta);ta.select();document.execCommand('copy');ta.remove();toast('Copied!'); });
 }
+function downloadPDF(){
+  if(!currentTrip){ toast('No trip open'); return; }
+  const {balances,settlements}=calcBalances();
+  const total=receipts.reduce((s,r)=>s+r.total,0);
+  const tripName=currentTrip.tripName;
+
+  // Build HTML for the print window
+  const rows=receipts.map(r=>{
+    const extras=[];
+    if(r.tax>.001) extras.push(`Tax ${fmt(r.tax)}`);
+    if(r.tip>.001) extras.push(`Tip ${fmt(r.tip)}`);
+    if(r.fee>.001) extras.push(`${he(r.feeLabel||'Fee')} ${fmt(r.fee)}`);
+    const items=r.items.map(it=>{
+      const who=Object.keys(it.shares).map(he).join(', ');
+      return `<tr><td style="padding:.25rem .5rem .25rem 1.5rem;color:#555">${he(it.name)}<span style="color:#999;font-size:.8em"> (${who})</span></td><td style="text-align:right;padding:.25rem .5rem">${fmt(it.price)}</td></tr>`;
+    }).join('');
+    return `
+      <tr style="background:#f8f8f8">
+        <td style="padding:.4rem .5rem;font-weight:600">${he(r.name)}</td>
+        <td style="text-align:right;padding:.4rem .5rem;font-weight:600">${fmt(r.total)}</td>
+      </tr>
+      ${items}
+      ${extras.length?`<tr><td style="padding:.2rem .5rem .2rem 1.5rem;color:#999;font-size:.85em">${extras.join(' · ')}</td><td></td></tr>`:''}
+      <tr><td style="padding:.2rem .5rem .35rem 1.5rem;color:#666;font-size:.85em">Paid by ${he(r.paidBy)} · ${r.date}</td><td style="text-align:right;padding:.2rem .5rem .35rem;color:#888;font-size:.85em">${Object.entries(r.shares).map(([p,v])=>`${he(p)}: ${fmt(v)}`).join(', ')}</td></tr>`;
+  }).join('');
+
+  const balanceRows=people.map(p=>{
+    const v=balances[p]||0;
+    let color='#888', label='settled';
+    if(v>.005){ color='#2a7a4f'; label=`is owed ${fmt(v)}`; }
+    else if(v<-.005){ color='#b04040'; label=`owes ${fmt(-v)}`; }
+    return `<tr><td style="padding:.3rem .5rem">${he(p)}</td><td style="text-align:right;padding:.3rem .5rem;color:${color};font-weight:500">${label}</td></tr>`;
+  }).join('');
+
+  const settlementRows=settlements.length
+    ? settlements.map(s=>`<tr><td style="padding:.3rem .5rem">${he(s.from)} → ${he(s.to)}</td><td style="text-align:right;padding:.3rem .5rem;font-weight:500">${fmt(s.amount)}</td></tr>`).join('')
+    : `<tr><td colspan="2" style="padding:.3rem .5rem;color:#888">Everyone is settled ✓</td></tr>`;
+
+  const html=`<!DOCTYPE html><html><head><meta charset="UTF-8">
+  <title>${he(tripName)} — Trip Summary</title>
+  <style>
+    *{box-sizing:border-box;margin:0;padding:0}
+    body{font-family:'Georgia',serif;color:#1a1a1a;padding:2.5rem 2.8rem;font-size:14px;line-height:1.5}
+    h1{font-size:2rem;font-weight:700;letter-spacing:-.5px;margin-bottom:.2rem}
+    .sub{color:#888;font-size:.8rem;text-transform:uppercase;letter-spacing:.08em;margin-bottom:2rem}
+    h2{font-size:1rem;font-weight:700;text-transform:uppercase;letter-spacing:.1em;color:#555;
+       margin:1.6rem 0 .6rem;padding-bottom:.3rem;border-bottom:2px solid #e0e0e0}
+    table{width:100%;border-collapse:collapse;font-size:.9rem}
+    tr{border-bottom:1px solid #eee}
+    .total-row{display:flex;justify-content:space-between;margin-top:1rem;padding:.6rem .5rem;
+       background:#f0f0f0;border-radius:3px;font-weight:600;font-size:.95rem}
+    .footer{margin-top:2.5rem;font-size:.75rem;color:#bbb;text-align:center}
+    @media print{body{padding:1.5rem}}
+  </style></head><body>
+  <h1>${he(tripName)}</h1>
+  <div class="sub">Trip Summary · ${new Date().toLocaleDateString()}</div>
+
+  <h2>Receipts</h2>
+  <table>${rows}</table>
+  <div class="total-row"><span>Total Expenses</span><span>${fmt(total)}</span></div>
+
+  <h2>Balances</h2>
+  <table>${balanceRows}</table>
+
+  <h2>Settlements</h2>
+  <table>${settlementRows}</table>
+
+  <div class="footer">Generated by Trip Splitter</div>
+  <script>window.onload=()=>{window.print();}<\/script>
+  </body></html>`;
+
+  const w=window.open('','_blank','width=800,height=600');
+  if(w){ w.document.write(html); w.document.close(); }
+  else { toast('Allow pop-ups to generate PDF'); }
+}
 function downloadJSON(){
-  if(!currentTrip){toast('No trip open');return;}
-  const data={tripName:currentTrip.tripName,createdAt:currentTrip.createdAt,people,receipts};
-  const a=Object.assign(document.createElement('a'),{href:URL.createObjectURL(new Blob([JSON.stringify(data,null,2)],{type:'application/json'})),download:`${currentTrip.tripName.replace(/\s+/g,'-')}.json`});
-  a.click(); toast('JSON downloaded!');
+  if(!currentTrip){ toast('No trip open'); return; }
+  const data={tripName:currentTrip.tripName,createdAt:currentTrip.createdAt,settled:currentTrip.settled||false,people,receipts};
+  const slug=currentTrip.tripName.replace(/\s+/g,'-').replace(/[^a-zA-Z0-9\-]/g,'');
+  const a=Object.assign(document.createElement('a'),{
+    href:URL.createObjectURL(new Blob([JSON.stringify(data,null,2)],{type:'application/json'})),
+    download:`${slug}-backup.json`
+  });
+  a.click(); toast('Backup downloaded — use Import to restore it');
 }
 function downloadCSV(){
   if(!receipts.length){toast('No receipts to export');return;}
@@ -1033,10 +1779,50 @@ function clearCurrentTrip(){
 }
 
 // ═══════════════════════════════════════════════════════
+// WELCOME OVERLAY
+// ═══════════════════════════════════════════════════════
+const SEEN_KEY = 'tripSplitter_seen_v1';
+
+function maybeShowWelcome(){
+  // Don't show welcome if arriving via a share link — let checkURLTrip handle that
+  if(location.hash.startsWith('#trip=')) return;
+  if(!localStorage.getItem(SEEN_KEY)){
+    document.getElementById('welcomeOverlay').style.display='flex';
+  }
+}
+function dismissWelcome(){
+  document.getElementById('welcomeOverlay').style.display='none';
+  try{ localStorage.setItem(SEEN_KEY,'1'); } catch(e){}
+}
+
+// ═══════════════════════════════════════════════════════
+// INSTALL BANNER  (mobile only, shown once after 4s)
+// ═══════════════════════════════════════════════════════
+const INSTALL_KEY = 'tripSplitter_installDismissed';
+
+function maybeShowInstallBanner(){
+  // Only on mobile, only once, not in standalone mode
+  const isMobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+  const isStandalone = window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone;
+  const dismissed = localStorage.getItem(INSTALL_KEY);
+  if(isMobile && !isStandalone && !dismissed){
+    setTimeout(()=>{
+      document.getElementById('installBanner').classList.add('show');
+    }, 4000);
+  }
+}
+function dismissInstallBanner(){
+  document.getElementById('installBanner').classList.remove('show');
+  try{ localStorage.setItem(INSTALL_KEY,'1'); } catch(e){}
+}
+
+// ═══════════════════════════════════════════════════════
 // BOOT
 // ═══════════════════════════════════════════════════════
 renderTripList();
 checkURLTrip();
+maybeShowWelcome();
+maybeShowInstallBanner();
 </script>
 </body>
 </html>
