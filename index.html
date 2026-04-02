@@ -1878,14 +1878,15 @@ function drawSummaryCard(){
   }
 
   // ── Two-pass: measure then draw ───────────────────────
+  const DPR = 3; // fixed high-res — defined here so both passes share it
   const scratch = document.createElement('canvas');
-  scratch.width = W; scratch.height = 10;
+  scratch.width = W * DPR; scratch.height = 10;
   const mctx = scratch.getContext('2d');
+  mctx.scale(DPR, DPR);
   const finalY = paint(mctx, W, PADDING, MONO, SERIF, tripName, total, money, settlements, false, isComplex);
   const H = Math.max(400, Math.ceil(finalY + FOOTER));
 
   // ── HiDPI real draw — always 3× for sharp screenshots & downloads ──
-  const DPR = 3;
   canvas.width  = W * DPR;
   canvas.height = H * DPR;
   canvas.style.width    = W + 'px';
@@ -2045,22 +2046,18 @@ function paint(ctx, W, P, MONO, SERIF, tripName, total, money, settlements, draw
     // Rows: one per active person
 
     const NUMS = ['①','②','③','④','⑤','⑥','⑦','⑧','⑨','⑩','⑪','⑫','⑬','⑭','⑮'];
-    const COL_FONT = `11px ${MONO}`;
     const CELL_FONT = `12px ${MONO}`;
-    const HEAD_FONT = `700 10px ${MONO}`;
+    const HEAD_FONT = `700 12px ${MONO}`;
 
     // Column widths — derived from actual W so they always fit
     const nCols      = receipts.length;
     const available  = W - P*2;
-    // Name col: up to 130px but at least enough for the longest name
     const nameColW   = Math.min(Math.floor(available * 0.28), 130);
-    // Total col: fixed comfortable size
     const totalColW  = Math.max(Math.floor(available * 0.13), 52);
-    // Receipt cols: divide remaining space evenly
     const receiptColW = Math.max(Math.floor((available - nameColW - totalColW) / nCols), 44);
 
     // Column x positions
-    const colX = [P + nameColW]; // first receipt col
+    const colX = [P + nameColW];
     for(let i=1; i<nCols; i++) colX.push(colX[0] + i*receiptColW);
     const totalColX = colX[0] + nCols*receiptColW;
 
