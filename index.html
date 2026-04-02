@@ -1852,19 +1852,39 @@ function drawSummaryCard(){
   const tripName = currentTrip?.tripName || 'Trip';
   const MONO     = 'ui-monospace, "SF Mono", Menlo, monospace';
   const SERIF    = 'Georgia, "Times New Roman", serif';
-  const W        = 560;
   const PADDING  = 32;
-  const FOOTER   = 30; // space reserved below last content for footer
+  const FOOTER   = 30;
+  const SIMPLE_THRESHOLD = 4;
+  const isComplex = receipts.length > SIMPLE_THRESHOLD;
 
-  // ── Two-pass: first measure, then draw ───────────────
-  // Pass 1: measure-only (no background, invisible canvas)
+  // ── Compute canvas width ──────────────────────────────
+  // For simple mode: fixed 560px is fine.
+  // For complex mode: derive width from minimum column sizes so nothing clips.
+  let W = 560;
+  if(isComplex){
+    // Use a scratch ctx to measure text
+    const sc = document.createElement('canvas').getContext('2d');
+    // Minimum cell width = widest money string + padding
+    const sampleAmt = money(total); // longest-ish amount
+    sc.font = `12px ${MONO}`;
+    const cellMin = Math.ceil(sc.measureText(sampleAmt).width) + 14;
+    // Name column: longest person name, capped
+    const nameMax = Math.min(Math.ceil(Math.max(...people.map(p=>{ sc.font=`12px ${MONO}`; return sc.measureText(p).width; }))) + 12, 130);
+    // Total col
+    const totalMin = Math.ceil(sc.measureText('TOTAL').width) + 16;
+    // Required width
+    const required = PADDING*2 + nameMax + receipts.length * cellMin + totalMin;
+    W = Math.max(560, Math.min(required, 900)); // cap at 900 so it stays phone-friendly
+  }
+
+  // ── Two-pass: measure then draw ───────────────────────
   const scratch = document.createElement('canvas');
   scratch.width = W; scratch.height = 10;
   const mctx = scratch.getContext('2d');
-  const finalY = paint(mctx, W, PADDING, MONO, SERIF, tripName, total, money, settlements, false);
+  const finalY = paint(mctx, W, PADDING, MONO, SERIF, tripName, total, money, settlements, false, isComplex);
   const H = Math.max(400, Math.ceil(finalY + FOOTER));
 
-  // Pass 2: real draw at HiDPI
+  // ── HiDPI real draw ───────────────────────────────────
   const DPR = Math.min(window.devicePixelRatio || 2, 3);
   canvas.width  = W * DPR;
   canvas.height = H * DPR;
@@ -1889,7 +1909,7 @@ function drawSummaryCard(){
   ctx.fillRect(0, 0, W, 5);
 
   // Content
-  const endY = paint(ctx, W, PADDING, MONO, SERIF, tripName, total, money, settlements, true);
+  const endY = paint(ctx, W, PADDING, MONO, SERIF, tripName, total, money, settlements, true, isComplex);
 
   // Footer
   ctx.font = `11px ${MONO}`; ctx.fillStyle = '#2e2e2e';
@@ -1900,11 +1920,11 @@ function drawSummaryCard(){
 // ── Shared draw/measure routine ───────────────────────
 // draw=false → only advances y (height measurement pass)
 // Returns final y after all content.
-function paint(ctx, W, P, MONO, SERIF, tripName, total, money, settlements, draw){
+function paint(ctx, W, P, MONO, SERIF, tripName, total, money, settlements, draw, isComplex){
   const LINE_H  = 24;
   const SEC_GAP = 18;
+  const SIMPLE_THRESHOLD = 4; // kept for reference but isComplex is passed in
   const dateStr = currentTrip?.createdAt || new Date().toLocaleDateString();
-  const SIMPLE_THRESHOLD = 4; // ≤ this many receipts → inline mode
 
   // ── helpers ──────────────────────────────────────────
   function txt(text, x, y, font, color){
@@ -1965,7 +1985,7 @@ function paint(ctx, W, P, MONO, SERIF, tripName, total, money, settlements, draw
   // only include people who owe something
   const activePeople = people.filter(p => personData[p].total > .001);
 
-  const isSimple = receipts.length <= SIMPLE_THRESHOLD;
+  const isSimple = !isComplex;
 
   if(isSimple){
     // ── SIMPLE MODE: inline per-person ───────────────────
@@ -2026,13 +2046,15 @@ function paint(ctx, W, P, MONO, SERIF, tripName, total, money, settlements, draw
     const CELL_FONT = `12px ${MONO}`;
     const HEAD_FONT = `700 10px ${MONO}`;
 
-    // Column widths: name col + one col per receipt + total col
-    const nCols   = receipts.length;
-    const available = W - P*2;
-    // Name col gets ~28% of space, total col ~14%, receipts share the rest
-    const nameColW  = Math.floor(available * 0.28);
-    const totalColW = Math.floor(available * 0.14);
-    const receiptColW = Math.floor((available - nameColW - totalColW) / nCols);
+    // Column widths — derived from actual W so they always fit
+    const nCols      = receipts.length;
+    const available  = W - P*2;
+    // Name col: up to 130px but at least enough for the longest name
+    const nameColW   = Math.min(Math.floor(available * 0.28), 130);
+    // Total col: fixed comfortable size
+    const totalColW  = Math.max(Math.floor(available * 0.13), 52);
+    // Receipt cols: divide remaining space evenly
+    const receiptColW = Math.max(Math.floor((available - nameColW - totalColW) / nCols), 44);
 
     // Column x positions
     const colX = [P + nameColW]; // first receipt col
